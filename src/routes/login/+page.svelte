@@ -2,6 +2,7 @@
     import { auth } from "$lib/stores/auth.svelte";
     import { toast } from "$lib/stores/toast.svelte";
     import { goto } from "$app/navigation";
+    import SEO from "$lib/components/SEO.svelte";
     import {
         Mail,
         Lock,
@@ -17,6 +18,13 @@
         Upload,
         Check,
         X,
+        Dog,
+        Cat,
+        Bird,
+        Rabbit,
+        Fish,
+        Heart,
+        PawPrint,
     } from "lucide-svelte";
     // import tzlookup // Removed to avoid build issues
 
@@ -54,16 +62,27 @@
         if (step === 2) {
             return !!street && !!city && !!country;
         }
+        if (step === 3) {
+            return true; // Profile picture is optional
+        }
+        if (step === 4) {
+            return true; // Species preferences are optional, can proceed
+        }
         return true;
     });
 
     // Multi-step Registration State
-    let step = $state(1); // 1: Basic, 2: Address, 3: Profile/Timezone
+    let step = $state(1); // 1: Basic, 2: Address, 3: Profile/Timezone, 4: Preferences
     let searchQuery = $state("");
     let searchResults: any[] = $state([]);
     let isSearching = $state(false);
     let selectedAddress: any = $state(null);
     let searchTimeout: any;
+
+    // Species preferences
+    let speciesList = $state<any[]>([]);
+    let selectedSpecies = $state<string[]>([]);
+    let isLoadingSpecies = $state(false);
 
     // Additional fields
     let profilePicture = $state("");
@@ -180,6 +199,34 @@
         profilePicture = URL.createObjectURL(profileFile);
     }
 
+    // Fetch species for preferences step
+    async function fetchSpecies() {
+        if (speciesList.length > 0) return; // Already loaded
+        isLoadingSpecies = true;
+        try {
+            const result = await apiCall(`query { species { id name label } }`);
+            if (result.data?.species) {
+                speciesList = result.data.species;
+            }
+        } catch (e) {
+            console.error("Failed to fetch species:", e);
+        } finally {
+            isLoadingSpecies = false;
+        }
+    }
+
+    function toggleSpeciesSelection(speciesId: string) {
+        if (selectedSpecies.includes(speciesId)) {
+            selectedSpecies = selectedSpecies.filter((id) => id !== speciesId);
+        } else {
+            selectedSpecies = [...selectedSpecies, speciesId];
+        }
+    }
+
+    function isSpeciesSelected(speciesId: string): boolean {
+        return selectedSpecies.includes(speciesId);
+    }
+
     function nextStep() {
         if (step === 1) {
             if (!name || !email || !password) {
@@ -198,6 +245,10 @@
                 return;
             }
         }
+        if (step === 3) {
+            // Moving to step 4, fetch species
+            fetchSpecies();
+        }
         error = "";
         step++;
     }
@@ -215,8 +266,8 @@
             if (isRegistering) {
                 // 1. Create User (without profile picture)
                 const registerMutation = `
-          mutation CreateUser($email: String!, $name: String!, $password: String!, $address: AddressInput, $timezone: String) {
-            createUser(email: $email, name: $name, password: $password, address: $address, timezone: $timezone) {
+          mutation CreateUser($email: String!, $name: String!, $password: String!, $address: AddressInput, $timezone: String, $preferredSpecies: [ID!]) {
+            createUser(email: $email, name: $name, password: $password, address: $address, timezone: $timezone, preferredSpecies: $preferredSpecies) {
               id
             }
           }
@@ -233,6 +284,7 @@
                         country,
                     },
                     timezone,
+                    preferredSpecies: selectedSpecies.length > 0 ? selectedSpecies : null,
                 });
                 if (res.errors) throw new Error(res.errors[0].message);
             }
@@ -243,6 +295,7 @@
             login(email: $email, password: $password) {
                 token
                 user {
+                id
                 name
                 email
                 profilePicture
@@ -312,6 +365,13 @@
         }
     }
 </script>
+
+<SEO
+    title="Login or Sign Up"
+    description="Join AdoptMe to find your perfect pet companion. Create an account or sign in to browse pets for adoption, post listings, and connect with animal lovers."
+    keywords="login, sign up, register, pet adoption account, adoptme login"
+    noindex={false}
+/>
 
 <div class="min-h-screen grid grid-cols-1 md:grid-cols-2">
     <!-- Left Column: Art/Branding -->
@@ -389,7 +449,7 @@
                         if (!isRegistering) {
                             handleSubmit();
                         } else {
-                            if (step === 3) handleSubmit();
+                            if (step === 4) handleSubmit();
                             else nextStep();
                         }
                     }
@@ -398,7 +458,7 @@
                 <div class="flex items-center justify-between text-xs text-gray-500">
                     <span>
                         {isRegistering
-                            ? `Step ${step} of 3`
+                            ? `Step ${step} of 4`
                             : "Sign in to continue"}
                     </span>
                     <span>
@@ -413,7 +473,7 @@
                 {#if isRegistering}
                     <!-- Step Indicator -->
                     <div class="flex justify-between items-center mb-6 px-2">
-                        {#each [1, 2, 3] as s}
+                        {#each [1, 2, 3, 4] as s}
                             <div class="flex flex-col items-center">
                                 <div
                                     class={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
@@ -429,12 +489,14 @@
                                         ? "Account"
                                         : s === 2
                                           ? "Address"
-                                          : "Profile"}</span
+                                          : s === 3
+                                            ? "Profile"
+                                            : "Pets"}</span
                                 >
                             </div>
-                            {#if s < 3}
+                            {#if s < 4}
                                 <div
-                                    class={`h-0.5 w-16 transition-colors ${step > s ? "bg-indigo-600" : "bg-gray-100"}`}
+                                    class={`h-0.5 w-12 transition-colors ${step > s ? "bg-indigo-600" : "bg-gray-100"}`}
                                 ></div>
                             {/if}
                         {/each}
@@ -610,6 +672,78 @@
                             </div>
                         </div>
                     {/if}
+
+                    {#if step === 4}
+                        <div>
+                            <div class="text-center mb-4">
+                                <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-3">
+                                    <Heart class="w-8 h-8 text-indigo-600" />
+                                </div>
+                                <h3 class="text-lg font-semibold text-gray-900">What pets do you love?</h3>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Select the animals you're interested in. We'll personalize your feed based on your preferences.
+                                </p>
+                            </div>
+
+                            {#if isLoadingSpecies}
+                                <div class="flex justify-center py-8">
+                                    <Loader2 class="w-8 h-8 animate-spin text-indigo-600" />
+                                </div>
+                            {:else}
+                                <div class="grid grid-cols-2 gap-3">
+                                    {#each speciesList as species}
+                                        <button
+                                            type="button"
+                                            onclick={() => toggleSpeciesSelection(species.id)}
+                                            class={`relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                                                isSpeciesSelected(species.id)
+                                                    ? "border-indigo-500 bg-indigo-50 shadow-md"
+                                                    : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+                                            }`}
+                                        >
+                                            {#if isSpeciesSelected(species.id)}
+                                                <div class="absolute top-2 right-2">
+                                                    <Check class="w-5 h-5 text-indigo-600" />
+                                                </div>
+                                            {/if}
+                                            <div class={`w-12 h-12 rounded-full flex items-center justify-center ${
+                                                isSpeciesSelected(species.id) ? "bg-indigo-200" : "bg-gray-100"
+                                            }`}>
+                                                {#if species.name === 'dog'}
+                                                    <Dog class={`w-6 h-6 ${isSpeciesSelected(species.id) ? "text-indigo-700" : "text-gray-500"}`} />
+                                                {:else if species.name === 'cat'}
+                                                    <Cat class={`w-6 h-6 ${isSpeciesSelected(species.id) ? "text-indigo-700" : "text-gray-500"}`} />
+                                                {:else if species.name === 'bird'}
+                                                    <Bird class={`w-6 h-6 ${isSpeciesSelected(species.id) ? "text-indigo-700" : "text-gray-500"}`} />
+                                                {:else if species.name === 'rabbit'}
+                                                    <Rabbit class={`w-6 h-6 ${isSpeciesSelected(species.id) ? "text-indigo-700" : "text-gray-500"}`} />
+                                                {:else if species.name === 'fish'}
+                                                    <Fish class={`w-6 h-6 ${isSpeciesSelected(species.id) ? "text-indigo-700" : "text-gray-500"}`} />
+                                                {:else}
+                                                    <PawPrint class={`w-6 h-6 ${isSpeciesSelected(species.id) ? "text-indigo-700" : "text-gray-500"}`} />
+                                                {/if}
+                                            </div>
+                                            <span class={`font-medium text-sm ${
+                                                isSpeciesSelected(species.id) ? "text-indigo-700" : "text-gray-700"
+                                            }`}>
+                                                {species.label}
+                                            </span>
+                                        </button>
+                                    {/each}
+                                </div>
+
+                                {#if selectedSpecies.length > 0}
+                                    <p class="text-center text-sm text-indigo-600 mt-4 font-medium">
+                                        {selectedSpecies.length} selected
+                                    </p>
+                                {:else}
+                                    <p class="text-center text-xs text-gray-400 mt-4">
+                                        You can skip this step if you like all animals equally!
+                                    </p>
+                                {/if}
+                            {/if}
+                        </div>
+                    {/if}
                 {/if}
 
                 <!-- Email/Password fields for Step 1 (or Login mode) -->
@@ -765,7 +899,7 @@
                             <Loader2 class="w-5 h-5 animate-spin" />
                         {:else}
                             {isRegistering
-                                ? step === 3
+                                ? step === 4
                                     ? "Complete Registration"
                                     : "Next Step"
                                 : "Sign In"}

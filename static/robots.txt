@@ -1,3 +1,13 @@
-# allow crawling everything by default
+# Robots.txt for AdoptMe
 User-agent: *
-Disallow:
+Allow: /
+
+# Disallow admin and API routes
+Disallow: /api/
+Disallow: /admin/
+
+# Sitemap location
+Sitemap: https://adoptme.com/sitemap.xml
+
+# Crawl delay (optional, be respectful of server resources)
+Crawl-delay: 1

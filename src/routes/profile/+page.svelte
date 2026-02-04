@@ -3,6 +3,7 @@
     import { goto } from "$app/navigation";
     import { onMount } from "svelte";
     import { fade, fly } from "svelte/transition";
+    import SEO from "$lib/components/SEO.svelte";
     import {
         Plus,
         Trash2,
@@ -11,13 +12,16 @@
         MapPin,
         Camera,
         Clock,
+        FileText,
     } from "lucide-svelte";
     import AddPetModal from "$lib/components/AddPetModal.svelte";
     import { toast } from "$lib/stores/toast.svelte";
 
     let pets = $state<any[]>([]);
+    let userPosts = $state<any[]>([]);
     let loadingPets = $state(true);
-    let activeTab = $state("settings"); // 'pets' | 'settings' | 'favorites'
+    let loadingPosts = $state(false);
+    let activeTab = $state("settings"); // 'pets' | 'posts' | 'settings'
     let isSaving = $state(false);
     let isDirty = $state(false);
 
@@ -200,7 +204,7 @@
         loadingPets = true;
         const query = `
       query GetMyPets {
-        pets {
+        myPets {
           id
           name
           species {
@@ -208,13 +212,10 @@
           }
           customSpecies
           breed {
-            label
+            name
           }
           customBreed
           coverImage
-          owner {
-            id
-          }
         }
         me {
            name
@@ -236,7 +237,10 @@
             const res = await apiCall(query);
             if (res.errors) throw new Error(res.errors[0].message);
 
-            const allPets = res.data.pets;
+            // myPets query already filters by current user server-side
+            pets = res.data.myPets || [];
+
+            // Update user profile data if available
             if (res.data.me) {
                 // Update with fresh data from DB
                 userName = res.data.me.name;
@@ -248,16 +252,53 @@
                 if (res.data.me.coverImage)
                     userCoverImage = res.data.me.coverImage;
                 snapshotProfile();
-
-                // Client-side filter
-                pets = allPets.filter(
-                    (p: any) => p.owner && p.owner.id === auth.user?.id,
-                );
             }
         } catch (e: any) {
             console.error(e.message);
         } finally {
             loadingPets = false;
+        }
+    }
+
+    async function fetchMyPosts() {
+        loadingPosts = true;
+        const query = `
+      query GetMyPosts {
+        myPosts {
+          id
+          title
+          description
+          postType
+          tags
+          images
+          location
+          createdAt
+          voteScore
+          upvotes
+          downvotes
+          commentCount
+          pet {
+            id
+            name
+            species { label }
+            breed { name }
+            customSpecies
+            customBreed
+            coverImage
+            status
+          }
+        }
+      }
+    `;
+
+        try {
+            const res = await apiCall(query);
+            if (res.errors) throw new Error(res.errors[0].message);
+            userPosts = res.data.myPosts || [];
+        } catch (e: any) {
+            console.error(e.message);
+        } finally {
+            loadingPosts = false;
         }
     }
 
@@ -278,13 +319,38 @@
         return data.files[0];
     }
 
+    async function deleteFile(fileUrl: string): Promise<void> {
+        if (!fileUrl) return;
+        try {
+            await fetch("/api/upload/delete", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${auth.token}`,
+                },
+                body: JSON.stringify({ fileUrl }),
+            });
+        } catch (error) {
+            console.error("Failed to delete old file:", error);
+            // Don't throw - we still want to proceed with the new upload
+        }
+    }
+
     async function handleProfileUpload(e: Event) {
         const input = e.target as HTMLInputElement;
         if (input.files && input.files.length > 0) {
             try {
+                // Delete old profile picture if exists
+                const oldUrl = userProfilePicture;
+
                 const url = await uploadFile(input.files[0]);
                 userProfilePicture = url;
                 await handleUpdateProfile();
+
+                // Delete old file after successful update
+                if (oldUrl) {
+                    await deleteFile(oldUrl);
+                }
             } catch (error) {
                 toast.error(`Error uploading profile picture`);
             }
@@ -295,9 +361,17 @@
         const input = e.target as HTMLInputElement;
         if (input.files && input.files.length > 0) {
             try {
+                // Delete old cover image if exists
+                const oldUrl = userCoverImage;
+
                 const url = await uploadFile(input.files[0]);
                 userCoverImage = url;
                 await handleUpdateProfile(); // Auto-save
+
+                // Delete old file after successful update
+                if (oldUrl) {
+                    await deleteFile(oldUrl);
+                }
             } catch (error) {
                 toast.error("Error uploading cover image");
             }
@@ -339,7 +413,34 @@
     }
 
     onMount(fetchMyPets);
+
+    let tabsContainer: HTMLElement;
+
+    function handleTabChange(tab: string) {
+        if (activeTab === tab) return;
+        activeTab = tab;
+
+        if (tab === "posts" && userPosts.length === 0) {
+            fetchMyPosts();
+        }
+
+        // Scroll to center content
+        if (tabsContainer) {
+            setTimeout(() => {
+                tabsContainer.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                });
+            }, 100);
+        }
+    }
 </script>
+
+<SEO
+    title="My Profile"
+    description="Manage your AdoptMe profile, pets, and posts. Update your information, add new pets for adoption, and view your activity."
+    noindex={true}
+/>
 
 <div class="min-h-screen bg-gray-50 pb-20">
     <!-- Profile Header -->
@@ -415,14 +516,18 @@
 
                     <!-- User Info (no container) -->
                     <div class="mt-4 text-center sm:text-left">
-                        <h1 class="text-2xl md:text-3xl font-bold text-gray-900">
+                        <h1
+                            class="text-2xl md:text-3xl font-bold text-gray-900"
+                        >
                             {userName || "My Profile"}
                         </h1>
                         <p class="text-gray-500 font-medium">
                             {auth.user?.email}
                         </p>
 
-                        <div class="mt-3 flex flex-wrap justify-center sm:justify-start gap-2">
+                        <div
+                            class="mt-3 flex flex-wrap justify-center sm:justify-start gap-2"
+                        >
                             <span
                                 class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-white border border-gray-100 shadow-sm"
                             >
@@ -445,14 +550,18 @@
         </div>
     </div>
 
+    <!-- Main Content -->
 
     <!-- Main Content -->
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+    <div
+        class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-8"
+        bind:this={tabsContainer}
+    >
         <!-- Tabs Navigation -->
         <div class="flex justify-center border-b border-gray-200 mb-8">
             <nav class="-mb-px flex space-x-8" aria-label="Tabs">
                 <button
-                    onclick={() => (activeTab = "settings")}
+                    onclick={() => handleTabChange("settings")}
                     class="{activeTab === 'settings'
                         ? 'border-indigo-500 text-indigo-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
@@ -460,12 +569,20 @@
                     Profile
                 </button>
                 <button
-                    onclick={() => (activeTab = "pets")}
+                    onclick={() => handleTabChange("pets")}
                     class="{activeTab === 'pets'
                         ? 'border-indigo-500 text-indigo-600'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
                 >
                     My Pets
+                </button>
+                <button
+                    onclick={() => handleTabChange("posts")}
+                    class="{activeTab === 'posts'
+                        ? 'border-indigo-500 text-indigo-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+                >
+                    My Posts
                 </button>
             </nav>
         </div>
@@ -559,7 +676,7 @@
                                         {pet.name}
                                     </h3>
                                     <p class="text-sm text-gray-500 mt-1">
-                                        {pet.breed?.label ||
+                                        {pet.breed?.name ||
                                             pet.customBreed ||
                                             "Unknown breed"}
                                     </p>
@@ -583,6 +700,184 @@
                                     </div>
                                 </div>
                             </div>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+        {/if}
+
+        <!-- Posts Tab -->
+        {#if activeTab === "posts"}
+            <div in:fade={{ duration: 200 }}>
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-gray-900">My Posts</h2>
+                    <span class="text-sm text-gray-500"
+                        >{userPosts.length} posts</span
+                    >
+                </div>
+
+                {#if loadingPosts}
+                    <div class="flex justify-center py-12">
+                        <div
+                            class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"
+                        ></div>
+                    </div>
+                {:else if userPosts.length === 0}
+                    <div
+                        class="text-center py-16 bg-white rounded-2xl shadow-sm border border-dashed border-gray-300"
+                    >
+                        <div
+                            class="mx-auto h-16 w-16 text-gray-400 mb-4 bg-gray-50 rounded-full flex items-center justify-center"
+                        >
+                            <FileText class="w-8 h-8" />
+                        </div>
+                        <h3 class="mt-2 text-sm font-medium text-gray-900">
+                            No posts yet
+                        </h3>
+                        <p class="mt-1 text-sm text-gray-500">
+                            Share your pet stories with the community!
+                        </p>
+                        <div class="mt-6">
+                            <a
+                                href="/"
+                                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none"
+                            >
+                                Create Post
+                            </a>
+                        </div>
+                    </div>
+                {:else}
+                    <div class="space-y-4">
+                        {#each userPosts as post}
+                            <a
+                                href="/post/{post.id}"
+                                class="block bg-white rounded-2xl shadow-sm hover:shadow-md transition-shadow border border-gray-100 overflow-hidden"
+                            >
+                                <div class="p-5">
+                                    <div
+                                        class="flex items-start justify-between gap-4"
+                                    >
+                                        <div class="flex-1">
+                                            <div
+                                                class="flex items-center gap-2 mb-2"
+                                            >
+                                                <span
+                                                    class="text-xs px-2 py-0.5 rounded-full font-medium {post.postType ===
+                                                    'adopt'
+                                                        ? 'bg-green-100 text-green-700'
+                                                        : post.postType ===
+                                                            'missing'
+                                                          ? 'bg-red-100 text-red-700'
+                                                          : 'bg-blue-100 text-blue-700'}"
+                                                >
+                                                    {post.postType === "adopt"
+                                                        ? "Adoption"
+                                                        : post.postType ===
+                                                            "missing"
+                                                          ? "Missing"
+                                                          : "Post"}
+                                                </span>
+                                                <span
+                                                    class="text-xs text-gray-500"
+                                                >
+                                                    {new Date(
+                                                        Number(post.createdAt),
+                                                    ).toLocaleDateString()}
+                                                </span>
+                                            </div>
+                                            <h3
+                                                class="font-semibold text-gray-900 mb-1 hover:text-indigo-600 transition-colors"
+                                            >
+                                                {post.title}
+                                            </h3>
+                                            <p
+                                                class="text-sm text-gray-600 line-clamp-2"
+                                            >
+                                                {post.description}
+                                            </p>
+                                            {#if post.pet}
+                                                <div
+                                                    class="mt-2 flex items-center gap-2 text-xs text-gray-500"
+                                                >
+                                                    <span
+                                                        class="bg-gray-100 px-2 py-0.5 rounded"
+                                                    >
+                                                        {post.pet.name} ({post
+                                                            .pet.species
+                                                            ?.label ||
+                                                            post.pet
+                                                                .customSpecies ||
+                                                            "Pet"})
+                                                    </span>
+                                                </div>
+                                            {/if}
+                                        </div>
+                                        {#if post.images && post.images.length > 0}
+                                            <img
+                                                src={post.images[0]}
+                                                alt=""
+                                                class="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                                            />
+                                        {/if}
+                                    </div>
+                                    <div
+                                        class="mt-3 pt-3 border-t border-gray-100 flex items-center gap-4 text-xs text-gray-500"
+                                    >
+                                        <span class="flex items-center gap-1">
+                                            <svg
+                                                class="w-4 h-4"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    stroke-width="2"
+                                                    d="M5 15l7-7 7 7"
+                                                ></path>
+                                            </svg>
+                                            {post.voteScore ?? 0} votes
+                                        </span>
+                                        <span class="flex items-center gap-1">
+                                            <svg
+                                                class="w-4 h-4"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    stroke-width="2"
+                                                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                                                ></path>
+                                            </svg>
+                                            {post.commentCount ?? 0} comments
+                                        </span>
+                                        {#if post.location}
+                                            <span
+                                                class="flex items-center gap-1"
+                                            >
+                                                <svg
+                                                    class="w-4 h-4"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                                                    ></path>
+                                                </svg>
+                                                {post.location}
+                                            </span>
+                                        {/if}
+                                    </div>
+                                </div>
+                            </a>
                         {/each}
                     </div>
                 {/if}
@@ -652,7 +947,10 @@
                                 </div>
 
                                 <!-- Hidden input kept to ensure value is submitted consistently -->
-                                <input type="hidden" bind:value={userTimezone} />
+                                <input
+                                    type="hidden"
+                                    bind:value={userTimezone}
+                                />
                             </div>
                         </div>
 

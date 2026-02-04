@@ -16,6 +16,7 @@ export interface IUser extends IBase {
     timezone?: string;  // IANA timezone string (e.g. "America/New_York")
     profilePicture?: string;
     coverImage?: string;
+    preferredSpecies?: mongoose.Types.ObjectId[]; // User's preferred animal species for personalized feed
     comparePassword(password: string): Promise<boolean>;
 }
 
@@ -29,6 +30,7 @@ const userSchema = new mongoose.Schema<IUser>({
     timezone: { type: String, required: false, default: 'UTC' }, // Default to UTC
     profilePicture: { type: String, required: false },
     coverImage: { type: String, required: false },
+    preferredSpecies: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Species' }], // User's preferred animals
 }, baseSchemaOptions);
 
 // Hash password before saving
@@ -48,5 +50,10 @@ userSchema.pre('save', async function () {
 userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
     return await bcrypt.compare(candidatePassword, this.passwordHash);
 };
+
+// Delete cached model in development to pick up schema changes
+if (process.env.NODE_ENV !== 'production' && mongoose.models.User) {
+    delete mongoose.models.User;
+}
 
 export const User = mongoose.models.User || mongoose.model<IUser>('User', userSchema);

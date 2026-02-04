@@ -33,6 +33,7 @@
 		"jsonwebtoken": "^9.0.3",
 		"lucide-svelte": "^0.563.0",
 		"mongoose": "^9.1.5",
-		"tz-lookup": "^6.1.25"
+		"tz-lookup": "^6.1.25",
+		"vidstack": "^1"
 	}
 }

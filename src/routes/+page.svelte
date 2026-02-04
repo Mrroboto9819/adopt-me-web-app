@@ -2,6 +2,8 @@
     import { auth } from "$lib/stores/auth.svelte";
     import PostCard from "$lib/components/PostCard.svelte";
     import CreatePostModal from "$lib/components/CreatePostModal.svelte";
+    import SEO from "$lib/components/SEO.svelte";
+    import StructuredData from "$lib/components/StructuredData.svelte";
     import { onMount } from "svelte";
     import { fade } from "svelte/transition";
     import logo from "$lib/assets/favicon.svg";
@@ -17,7 +19,12 @@
         Plus,
         PawPrint,
         Clock,
-        CheckCircle,
+        CircleCheck,
+        LayoutList,
+        Search,
+        FileText,
+        Heart,
+        Coffee,
     } from "lucide-svelte";
 
     let posts = $state<any[]>([]);
@@ -30,6 +37,47 @@
     let observerTarget = $state<HTMLElement | null>(null);
     let showCreateModal = $state(false);
     let lastUpdated = $state<Date | null>(null);
+
+    // Filter state
+    let speciesList = $state<any[]>([]);
+    let selectedSpeciesId = $state<string | null>(null);
+    let selectedPostType = $state<string | null>(null);
+    let sortBy = $state<"popular" | "recent">("popular");
+
+    // Fetch species for filter buttons
+    async function fetchSpecies() {
+        try {
+            const response = await fetch("/api/graphql", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    query: `query { species { id name label } }`,
+                }),
+            });
+            const result = await response.json();
+            if (result.data?.species) {
+                speciesList = result.data.species;
+            }
+        } catch (e) {
+            console.error("Failed to fetch species:", e);
+        }
+    }
+
+    // Handle filter change
+    function setSpeciesFilter(speciesId: string | null) {
+        selectedSpeciesId = speciesId;
+        refreshFeed();
+    }
+
+    function setPostTypeFilter(postType: string | null) {
+        selectedPostType = postType;
+        refreshFeed();
+    }
+
+    function setSortBy(sort: "popular" | "recent") {
+        sortBy = sort;
+        refreshFeed();
+    }
 
     // Fetch posts function (reusable for initial load and pagination)
     async function fetchPosts(cursor: string | null = null) {
@@ -45,28 +93,40 @@
                 },
                 body: JSON.stringify({
                     query: `
-            query GetPostsFeed($first: Int, $after: String) {
-              postsFeed(first: $first, after: $after) {
+            query GetPostsFeed($first: Int, $after: String, $speciesId: ID, $postType: PostType, $sortBy: String) {
+              postsFeed(first: $first, after: $after, speciesId: $speciesId, postType: $postType, sortBy: $sortBy) {
                 edges {
                   cursor
                   node {
                     id
                     title
                     description
+                    postType
+                    tags
+                    images
+                    video
                     location
                     createdAt
+                    voteScore
+                    upvotes
+                    downvotes
+                    userVote
+                    commentCount
                     author {
+                      id
                       name
+                      profilePicture
                     }
                     pet {
                       name
                       species {
+                        id
                         label
                         name
                       }
                       customSpecies
                       breed {
-                        label
+                        name
                       }
                       customBreed
                       age
@@ -85,8 +145,11 @@
             }
           `,
                     variables: {
-                        first: 10,
+                        first: 3,
                         after: cursor,
+                        speciesId: selectedSpeciesId || null,
+                        postType: selectedPostType || null,
+                        sortBy: sortBy,
                     },
                 }),
             });
@@ -96,11 +159,17 @@
 
             const { edges, pageInfo } = result.data.postsFeed;
 
-            // Append new posts
+            // Append new posts (with deduplication to prevent duplicate key errors)
+            const newPosts = edges.map((edge: any) => edge.node);
             if (cursor) {
-                posts = [...posts, ...edges.map((edge: any) => edge.node)];
+                // Filter out any posts that already exist
+                const existingIds = new Set(posts.map((p: any) => p.id));
+                const uniqueNewPosts = newPosts.filter(
+                    (p: any) => !existingIds.has(p.id),
+                );
+                posts = [...posts, ...uniqueNewPosts];
             } else {
-                posts = edges.map((edge: any) => edge.node);
+                posts = newPosts;
             }
 
             hasMore = pageInfo.hasNextPage;
@@ -121,9 +190,20 @@
     }
 
     // Refresh feed (after creating post)
-    async function refreshFeed() {
+    // If a new post is provided, prepend it to show immediately at the top
+    async function refreshFeed(newPost?: any) {
         if (isRefreshing) return;
         isRefreshing = true;
+
+        // If we have a new post, prepend it immediately for instant feedback
+        if (newPost) {
+            // Filter out any existing post with the same ID to prevent duplicates
+            posts = [newPost, ...posts.filter((p: any) => p.id !== newPost.id)];
+            isRefreshing = false;
+            return;
+        }
+
+        // Otherwise do a full refresh
         loading = true;
         posts = [];
         hasMore = true;
@@ -135,7 +215,7 @@
 
     // Initial fetch on mount
     onMount(async () => {
-        await fetchPosts();
+        await Promise.all([fetchPosts(), fetchSpecies()]);
         loading = false;
     });
 
@@ -159,15 +239,6 @@
         };
     });
 
-    // Mock categories
-    const categories = [
-        { name: "Dogs", icon: Dog },
-        { name: "Cats", icon: Cat },
-        { name: "Birds", icon: Bird },
-        { name: "Rabbits", icon: Rabbit },
-        { name: "Other", icon: Fish },
-    ];
-
     function formatTime(value: Date | null) {
         if (!value) return "Never";
         return value.toLocaleTimeString([], {
@@ -176,6 +247,14 @@
         });
     }
 </script>
+
+<SEO
+    title="Home - Find Pets for Adoption"
+    description="Discover dogs, cats, rabbits and more pets available for adoption near you. Browse adoption listings, share success stories, and connect with pet lovers in your community."
+    keywords="pet adoption, adopt a pet, dogs for adoption, cats for adoption, animal shelter, rescue pets, adopt don't shop"
+/>
+<StructuredData type="WebSite" />
+<StructuredData type="Organization" />
 
 <div class="bg-gray-50 min-h-[calc(100vh-3.5rem)] pt-8 pb-12">
     <!-- Offset for fixed navbar -->
@@ -192,46 +271,118 @@
                     <div
                         class="px-4 py-3 text-xs font-bold text-gray-400 uppercase tracking-widest"
                     >
-                        Menu
+                        Sort By
                     </div>
-                    <a
-                        href="/"
-                        class="flex items-center gap-3 px-4 py-3 bg-indigo-50/50 text-indigo-700 rounded-xl font-semibold text-sm mb-1 transition-colors"
-                    >
-                        <Home class="w-5 h-5" />
-                        Home Feed
-                    </a>
-                    <a
-                        href="/popular"
-                        class="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-gray-600 rounded-xl font-medium text-sm transition-colors"
+                    <button
+                        onclick={() => setSortBy("popular")}
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm mb-1 transition-colors w-full text-left {sortBy ===
+                        'popular'
+                            ? 'bg-indigo-50/50 text-indigo-700 font-semibold'
+                            : 'hover:bg-gray-50 text-gray-600'}"
                     >
                         <TrendingUp class="w-5 h-5" />
                         Popular
-                    </a>
+                    </button>
+                    <button
+                        onclick={() => setSortBy("recent")}
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition-colors w-full text-left {sortBy ===
+                        'recent'
+                            ? 'bg-indigo-50/50 text-indigo-700 font-semibold'
+                            : 'hover:bg-gray-50 text-gray-600'}"
+                    >
+                        <Clock class="w-5 h-5" />
+                        Recent
+                    </button>
                 </div>
 
-                <!-- Categories -->
+                <!-- Species Filter -->
                 <div
                     class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-2"
                 >
                     <div
                         class="px-4 py-3 text-xs font-bold text-gray-400 uppercase tracking-widest"
                     >
-                        Categories
+                        Filter by Species
                     </div>
-                    {#each categories as cat}
-                        <a
-                            href={`/category/${cat.name.toLowerCase()}`}
-                            class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 rounded-xl text-gray-600 font-medium text-sm transition-colors group"
+                    <button
+                        onclick={() => setSpeciesFilter(null)}
+                        class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm transition-colors w-full text-left {selectedSpeciesId ===
+                        null
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'hover:bg-gray-50 text-gray-600'}"
+                    >
+                        <PawPrint class="w-5 h-5" />
+                        All Species
+                    </button>
+                    {#each speciesList as species}
+                        <button
+                            onclick={() => setSpeciesFilter(species.id)}
+                            class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm transition-colors w-full text-left {selectedSpeciesId ===
+                            species.id
+                                ? 'bg-indigo-50 text-indigo-700'
+                                : 'hover:bg-gray-50 text-gray-600'}"
                         >
-                            <span
-                                class="text-gray-400 group-hover:text-indigo-500 transition-colors"
-                            >
-                                <cat.icon class="w-5 h-5" />
-                            </span>
-                            {cat.name}
-                        </a>
+                            {#if species.name === "dog"}
+                                <Dog class="w-5 h-5" />
+                            {:else if species.name === "cat"}
+                                <Cat class="w-5 h-5" />
+                            {:else if species.name === "bird"}
+                                <Bird class="w-5 h-5" />
+                            {:else if species.name === "rabbit"}
+                                <Rabbit class="w-5 h-5" />
+                            {:else}
+                                <Fish class="w-5 h-5" />
+                            {/if}
+                            {species.label}
+                        </button>
                     {/each}
+                </div>
+
+                <!-- Post Type Filter -->
+                <div
+                    class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-2"
+                >
+                    <div
+                        class="px-4 py-3 text-xs font-bold text-gray-400 uppercase tracking-widest"
+                    >
+                        Post Type
+                    </div>
+                    <button
+                        onclick={() => setPostTypeFilter(null)}
+                        class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm transition-colors w-full text-left {selectedPostType ===
+                        null
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'hover:bg-gray-50 text-gray-600'}"
+                    >
+                        <LayoutList class="w-4 h-4" /> All Posts
+                    </button>
+                    <button
+                        onclick={() => setPostTypeFilter("adopt")}
+                        class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm transition-colors w-full text-left {selectedPostType ===
+                        'adopt'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'hover:bg-gray-50 text-gray-600'}"
+                    >
+                        <Home class="w-4 h-4" /> Adoptions
+                    </button>
+                    <button
+                        onclick={() => setPostTypeFilter("missing")}
+                        class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm transition-colors w-full text-left {selectedPostType ===
+                        'missing'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'hover:bg-gray-50 text-gray-600'}"
+                    >
+                        <Search class="w-4 h-4" /> Missing Pets
+                    </button>
+                    <button
+                        onclick={() => setPostTypeFilter("post")}
+                        class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-sm transition-colors w-full text-left {selectedPostType ===
+                        'post'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'hover:bg-gray-50 text-gray-600'}"
+                    >
+                        <FileText class="w-4 h-4" /> General Posts
+                    </button>
                 </div>
             </div>
         </div>
@@ -249,14 +400,39 @@
                               : `Updated at ${formatTime(lastUpdated)}`}
                     </p>
                 </div>
-                <button
+                <!-- <button
                     onclick={refreshFeed}
                     class="px-3 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
                     disabled={loading || isRefreshing}
                 >
                     Refresh
-                </button>
+                </button> -->
             </div>
+            <!-- Support Us Button -->
+            <a
+                href="/support"
+                class="block bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-300 group mb-6"
+            >
+                <div class="flex items-center gap-4">
+                    <div
+                        class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white backdrop-blur-sm"
+                    >
+                        <Coffee class="w-5 h-5" />
+                    </div>
+                    <div class="flex-1 text-white">
+                        <h3 class="font-bold text-sm">Support the Developer</h3>
+                        <p class="text-xs text-white/90">
+                            Help us keep the platform free and running!
+                        </p>
+                    </div>
+                    <div
+                        class="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg text-white text-xs font-bold group-hover:bg-white/30 transition-colors"
+                    >
+                        Buy Coffee
+                    </div>
+                </div>
+            </a>
+
             <!-- Create Post Input -->
             {#if auth.user}
                 <button
@@ -264,14 +440,22 @@
                     class="bg-white p-4 rounded-2xl border border-gray-200/60 shadow-sm flex items-center gap-4 w-full hover:shadow-md hover:border-indigo-200 transition-all duration-300 group"
                 >
                     <div
-                        class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold shadow-md"
+                        class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold shadow-md overflow-hidden"
                     >
-                        {auth.user.name[0].toUpperCase()}
+                        {#if auth.user.profilePicture}
+                            <img
+                                src={auth.user.profilePicture}
+                                alt={auth.user.name}
+                                class="w-full h-full object-cover"
+                            />
+                        {:else}
+                            {auth.user.name[0].toUpperCase()}
+                        {/if}
                     </div>
                     <div
                         class="flex-1 bg-gray-50 border border-gray-200/80 rounded-xl py-2.5 px-4 text-sm text-gray-500 text-left group-hover:bg-white transition-colors"
                     >
-                        What are you looking for today?
+                        What are you want to share today?
                     </div>
                     <div
                         class="p-2 bg-indigo-50 text-indigo-600 rounded-full group-hover:bg-indigo-100 transition-colors"
@@ -349,7 +533,9 @@
                         class="py-8 flex justify-center"
                     >
                         {#if loadingMore}
-                            <div class="flex items-center gap-3 text-sm text-gray-500">
+                            <div
+                                class="flex items-center gap-3 text-sm text-gray-500"
+                            >
                                 <div
                                     class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"
                                 ></div>
@@ -401,25 +587,37 @@
                     <p
                         class="text-xs font-medium text-indigo-600 mb-4 uppercase tracking-wide"
                     >
-                        Since 2024
+                        Since 2026
                     </p>
 
-                    <p class="text-sm text-gray-600 mb-6 leading-relaxed">
-                        The best place to find your new furry friend. Post pets
-                        for adoption, share success stories, and connect with
-                        other pet lovers.
+                    <p class="text-sm text-gray-600 mb-4 leading-relaxed">
+                        We created AdoptMe to help people share and find animals
+                        looking for a loving home. Our mission is to build a
+                        welcoming community where pet lovers can connect, share
+                        adoption stories, and give every animal a chance at
+                        happiness.
+                    </p>
+
+                    <p class="text-sm text-gray-500 mb-6 leading-relaxed">
+                        Whether you're looking to adopt, rehome a pet, or simply
+                        connect with fellow animal enthusiasts, you're in the
+                        right place.
                     </p>
 
                     <div
                         class="flex flex-col gap-3 text-sm text-gray-500 border-t border-gray-100 pt-4 mb-6"
                     >
                         <div class="flex items-center gap-3">
-                            <CheckCircle class="w-4 h-4 text-green-500" />
+                            <CircleCheck class="w-4 h-4 text-green-500" />
                             <span>Verified Listings</span>
                         </div>
                         <div class="flex items-center gap-3">
                             <Clock class="w-4 h-4 text-orange-500" />
-                            <span>Updated Hourly</span>
+                            <span>Active Community</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <Heart class="w-4 h-4 text-rose-500" />
+                            <span>Free Forever</span>
                         </div>
                     </div>
 
@@ -434,9 +632,10 @@
 
             <div class="mt-8 text-center">
                 <p class="text-xs text-gray-400 font-medium">
-                    &copy; 2025 AdoptMe Inc. <br />
-                    <a href="/privacy" class="hover:underline">Privacy</a> •
-                    <a href="/terms" class="hover:underline">Terms</a>
+                    &copy; 2026 AdoptMe <br />
+                    <a href="/about" class="hover:underline">About</a> •
+                    <!-- <a href="/contact" class="hover:underline">Contact</a> • -->
+                    <a href="/support" class="hover:underline">Support Us</a>
                 </p>
             </div>
         </div>

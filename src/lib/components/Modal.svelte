@@ -3,7 +3,21 @@
     import { quintOut } from "svelte/easing";
     import { X } from "lucide-svelte";
 
-    let { open, title, onClose, children } = $props();
+    import { type Snippet } from "svelte";
+
+    let {
+        open,
+        title,
+        onClose,
+        children,
+        footer,
+    }: {
+        open: boolean;
+        title?: string;
+        onClose: () => void;
+        children: Snippet;
+        footer?: Snippet;
+    } = $props();
 </script>
 
 {#if open}
@@ -14,7 +28,7 @@
         aria-modal="true"
     >
         <div
-            class="flex items-center justify-center min-h-screen px-4 pb-20 text-center sm:block sm:p-0"
+            class="flex items-center justify-center min-h-screen px-4 p-4 text-center"
         >
             <!-- 
                 Background overlay 
@@ -27,18 +41,12 @@
                 transition:fade={{ duration: 200 }}
             ></div>
 
-            <!-- This element is to trick the browser into centering the modal contents. -->
-            <span
-                class="hidden sm:inline-block sm:align-middle sm:h-screen"
-                aria-hidden="true">&#8203;</span
-            >
-
-            <!-- 
-                Modal panel 
+            <!--
+                Modal panel
                 Using `scale` combined with `fade` (implicitly via opacity in scale) for a "pop" effect.
             -->
             <div
-                class="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full"
+                class="relative bg-white rounded-2xl text-left shadow-2xl transform transition-all sm:my-8 sm:max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden"
                 transition:scale={{
                     duration: 300,
                     opacity: 0,
@@ -46,9 +54,9 @@
                     easing: quintOut,
                 }}
             >
-                <!-- Header -->
+                <!-- Header (fixed) -->
                 <div
-                    class="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50"
+                    class="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0"
                 >
                     {#if title}
                         <h3
@@ -69,10 +77,19 @@
                     </button>
                 </div>
 
-                <!-- Body -->
-                <div class="px-6 py-6">
+                <!-- Body (scrollable) -->
+                <div class="px-6 py-6 overflow-y-auto flex-1">
                     {@render children()}
                 </div>
+
+                <!-- Footer (fixed) -->
+                {#if footer}
+                    <div
+                        class="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0"
+                    >
+                        {@render footer()}
+                    </div>
+                {/if}
             </div>
         </div>
     </div>

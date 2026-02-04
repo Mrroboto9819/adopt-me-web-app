@@ -3,6 +3,11 @@ import { verifyToken } from '$lib/auth';
 import fs from 'fs';
 import path from 'path';
 
+// File size limits
+const MAX_IMAGE_SIZE_MB = 10;
+const MAX_VIDEO_SIZE_MB = 100;
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v'];
+
 export async function POST({ request }) {
     // 1. Authenticate Request (Optional for registration)
     const authHeader = request.headers.get('Authorization');
@@ -24,10 +29,24 @@ export async function POST({ request }) {
         return json({ error: 'No files uploaded' }, { status: 400 });
     }
 
+    // 3. Validate file sizes
+    for (const file of files) {
+        const ext = path.extname(file.name).toLowerCase();
+        const isVideo = VIDEO_EXTENSIONS.includes(ext);
+        const maxSizeMB = isVideo ? MAX_VIDEO_SIZE_MB : MAX_IMAGE_SIZE_MB;
+        const fileSizeMB = file.size / (1024 * 1024);
+
+        if (fileSizeMB > maxSizeMB) {
+            return json({
+                error: `File "${file.name}" is too large (${fileSizeMB.toFixed(1)}MB). Maximum size for ${isVideo ? 'videos' : 'images'} is ${maxSizeMB}MB.`
+            }, { status: 400 });
+        }
+    }
+
     const uploadedUrls: string[] = [];
     const timestamp = Date.now();
 
-    // 3. Create Directory structure: static/uploads/<userId>/<timestamp>/
+    // 4. Create Directory structure: static/uploads/<userId>/<timestamp>/
     // Using simple timestamp to group this batch.
     // Note: In SvelteKit `static` assets are served from root `/`. 
     // We physically write to `static/uploads...` in the project dir.
@@ -37,7 +56,7 @@ export async function POST({ request }) {
         fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    // 4. Save Files
+    // 5. Save Files
     for (const file of files) {
         const buffer = await file.arrayBuffer();
         // sanitize filename
