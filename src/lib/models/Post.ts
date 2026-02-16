@@ -6,6 +6,8 @@ import type { IBase } from './base';
 import type { IAddress } from './Address';
 
 export type PostType = 'post' | 'adopt' | 'missing';
+export type ReportType = 'lost' | 'found';
+export type PreferredContactMethod = 'phone' | 'email';
 
 export interface IPost extends IBase {
     _id: string;
@@ -14,6 +16,8 @@ export interface IPost extends IBase {
     author: mongoose.Types.ObjectId;
     pet?: mongoose.Types.ObjectId;
     postType: PostType;
+    reportType?: ReportType; // Only for postType: 'missing' - indicates lost or found pet
+    preferredContact?: PreferredContactMethod; // For adopt and missing posts - how to contact the author
     tags: string[];
     images: string[];
     video?: string; // Single video URL per post
@@ -29,6 +33,8 @@ const postSchema = new mongoose.Schema<IPost>({
     author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     pet: { type: mongoose.Schema.Types.ObjectId, ref: 'Pet', required: false },
     postType: { type: String, enum: ['post', 'adopt', 'missing'], default: 'post' },
+    reportType: { type: String, enum: ['lost', 'found'], required: false }, // For missing posts
+    preferredContact: { type: String, enum: ['phone', 'email'], required: false }, // For adopt/missing posts
     tags: [{ type: String }],
     images: [{ type: String }],
     video: { type: String, required: false },

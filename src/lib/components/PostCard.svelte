@@ -2,36 +2,76 @@
     import { auth } from "$lib/stores/auth.svelte";
     import { toast } from "$lib/stores/toast.svelte";
     import { goto } from "$app/navigation";
+    import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, MapPin, Flag, Mail, Phone, BadgeCheck, Pencil, Trash2 } from "lucide-svelte";
     import VideoPlayer from "./VideoPlayer.svelte";
+    import ReportPostModal from "./ReportPostModal.svelte";
+    import EditPostModal from "./EditPostModal.svelte";
+    import DeletePostModal from "./DeletePostModal.svelte";
+    import { _ } from "$lib/i18n";
 
     // Props for the post
-    let { post, onVoteChange } = $props<{
+    let { post, onVoteChange, onPostUpdated, onPostDeleted } = $props<{
         post: any;
         onVoteChange?: () => void;
+        onPostUpdated?: (updatedPost: any) => void;
+        onPostDeleted?: () => void;
     }>();
 
     let isVoting = $state(false);
+    let isSaving = $state(false);
+    let showReportModal = $state(false);
+    let showEditModal = $state(false);
+    let showDeleteModal = $state(false);
+    let showMoreMenu = $state(false);
+    let isSaved = $state(false);
 
-    // Format date relative (simple version)
-    function formatDate(dateStr: string) {
+    // Check if current user is the owner
+    const isOwner = $derived(auth.user && post.author && post.author.id === auth.user.id);
+
+    // Sync isSaved with post.isSaved when it changes
+    $effect(() => {
+        isSaved = post.isSaved ?? false;
+    });
+
+    // Format date relative
+    function formatRelativeTime(dateStr: string) {
         const d = new Date(Number(dateStr));
-        return d.toLocaleDateString() + " " + d.toLocaleTimeString();
+        const now = new Date();
+        const diffMs = now.getTime() - d.getTime();
+        const diffSecs = Math.floor(diffMs / 1000);
+        const diffMins = Math.floor(diffSecs / 60);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        const diffWeeks = Math.floor(diffDays / 7);
+
+        if (diffSecs < 60) return $_("time.just_now");
+        if (diffMins < 60) return $_("time.mins_ago", { values: { count: diffMins } });
+        if (diffHours < 24) return $_("time.hours_ago", { values: { count: diffHours } });
+        if (diffDays < 7) return $_("time.days_ago", { values: { count: diffDays } });
+        if (diffWeeks < 4) return $_("time.weeks_ago", { values: { count: diffWeeks } });
+        return d.toLocaleDateString();
     }
 
     // Get post type badge
-    function getPostTypeBadge(postType: string) {
+    function getPostTypeBadge(postType: string, reportType?: string) {
         switch (postType) {
             case 'adopt':
-                return { label: 'Adoption', class: 'bg-green-100 text-green-700 border-green-200' };
+                return { label: $_("post.adoption"), class: 'bg-green-500 text-white' };
             case 'missing':
-                return { label: 'Missing', class: 'bg-red-100 text-red-700 border-red-200' };
+                if (reportType === 'lost') {
+                    return { label: $_("post.lost_pet"), class: 'bg-red-500 text-white' };
+                }
+                if (reportType === 'found') {
+                    return { label: $_("post.found_pet"), class: 'bg-orange-500 text-white' };
+                }
+                return { label: $_("post.missing_pet"), class: 'bg-red-500 text-white' };
             default:
-                return { label: 'Post', class: 'bg-blue-100 text-blue-700 border-blue-200' };
+                return { label: $_("post.general_post"), class: 'bg-indigo-500 text-white' };
         }
     }
 
-    async function handleVote(value: number, e: Event) {
-        e.stopPropagation(); // Prevent card click
+    async function handleLike(e: Event) {
+        e.stopPropagation();
 
         if (!auth.user || !auth.token) {
             window.location.href = "/login";
@@ -42,8 +82,8 @@
         isVoting = true;
 
         try {
-            // If user already voted with same value, remove vote
-            const shouldRemove = post.userVote === value;
+            // Toggle like (1 for like, remove if already liked)
+            const shouldRemove = post.userVote === 1;
 
             const response = await fetch("/api/graphql", {
                 method: "POST",
@@ -57,14 +97,13 @@
                         : `mutation VotePost($postId: ID!, $value: Int!) { votePost(postId: $postId, value: $value) { id voteScore upvotes downvotes userVote } }`,
                     variables: shouldRemove
                         ? { postId: post.id }
-                        : { postId: post.id, value },
+                        : { postId: post.id, value: 1 },
                 }),
             });
 
             const result = await response.json();
             if (result.errors) throw new Error(result.errors[0].message);
 
-            // Update the post with new vote data
             const updatedPost = shouldRemove ? result.data.removeVote : result.data.votePost;
             post.voteScore = updatedPost.voteScore;
             post.upvotes = updatedPost.upvotes;
@@ -73,7 +112,7 @@
 
             if (onVoteChange) onVoteChange();
         } catch (e: any) {
-            toast.error(e.message || "Failed to vote");
+            toast.error(e.message || $_("common.failed_vote"));
         } finally {
             isVoting = false;
         }
@@ -84,7 +123,6 @@
     }
 
     function handleCardClick(e: MouseEvent) {
-        // Don't navigate if clicking on interactive elements
         const target = e.target as HTMLElement;
         if (target.closest('button') || target.closest('a')) {
             return;
@@ -92,262 +130,481 @@
         navigateToPost();
     }
 
-    const postTypeBadge = $derived(getPostTypeBadge(post.postType));
+    function handleShare(e: Event) {
+        e.stopPropagation();
+        const url = `${window.location.origin}/post/${post.id}`;
+        if (navigator.share) {
+            navigator.share({ title: post.title, url }).catch(() => {});
+        } else {
+            navigator.clipboard.writeText(url).then(() => {
+                toast.success($_("common.link_copied"));
+            }).catch(() => {
+                toast.error($_("common.copy_failed"));
+            });
+        }
+    }
+
+    async function handleSave(e: Event) {
+        e.stopPropagation();
+
+        if (!auth.user || !auth.token) {
+            window.location.href = "/login";
+            return;
+        }
+
+        if (isSaving) return;
+        isSaving = true;
+
+        const newSavedState = !isSaved;
+
+        try {
+            const mutation = newSavedState
+                ? `mutation SavePost($postId: ID!) { savePost(postId: $postId) { id isSaved } }`
+                : `mutation UnsavePost($postId: ID!) { unsavePost(postId: $postId) { id isSaved } }`;
+
+            const response = await fetch("/api/graphql", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${auth.token}`,
+                },
+                body: JSON.stringify({
+                    query: mutation,
+                    variables: { postId: post.id },
+                }),
+            });
+
+            const result = await response.json();
+            if (result.errors) throw new Error(result.errors[0].message);
+
+            const updatedPost = newSavedState ? result.data.savePost : result.data.unsavePost;
+            isSaved = updatedPost.isSaved;
+            post.isSaved = updatedPost.isSaved;
+            toast.success(isSaved ? $_("post.saved") : $_("post.unsaved"));
+        } catch (e: any) {
+            toast.error(e.message || $_("common.failed_action"));
+        } finally {
+            isSaving = false;
+        }
+    }
+
+    const postTypeBadge = $derived(getPostTypeBadge(post.postType, post.reportType));
+    const isLiked = $derived(post.userVote === 1);
+    const likeCount = $derived(post.upvotes ?? post.voteScore ?? 0);
 </script>
 
 <div
-    class="bg-white border border-gray-300 rounded-md hover:border-gray-400 transition-colors cursor-pointer mb-4 overflow-hidden"
+    class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow overflow-hidden cursor-pointer"
     onclick={handleCardClick}
-    role="article"
+    onkeydown={(e) => e.key === 'Enter' && handleCardClick(e)}
+    role="button"
+    tabindex="0"
+    aria-label={$_("post_card.view_post")}
 >
-    <div class="flex">
-        <!-- Vote Column -->
-        <div
-            class="w-10 bg-gray-50/50 flex flex-col items-center py-2 gap-1 border-r border-gray-100"
+    <!-- Header -->
+    <div class="p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
+        <!-- Author Avatar -->
+        <a
+            href={post.author ? `/user/${post.author.id}` : '#'}
+            onclick={(e) => e.stopPropagation()}
+            class="flex-shrink-0"
         >
-            <button
-                onclick={(e) => handleVote(1, e)}
-                class="hover:bg-gray-200 rounded p-1 transition-colors disabled:opacity-50"
-                class:text-orange-500={post.userVote === 1}
-                class:text-gray-400={post.userVote !== 1}
-                disabled={isVoting}
-                aria-label="Upvote"
-            >
-                <svg
-                    class="w-6 h-6"
-                    fill={post.userVote === 1 ? "currentColor" : "none"}
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    ><path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M5 15l7-7 7 7"
-                    ></path></svg
-                >
-            </button>
-            <span class="text-sm font-bold" class:text-orange-500={post.voteScore > 0} class:text-indigo-500={post.voteScore < 0} class:text-gray-700={post.voteScore === 0}>
-                {post.voteScore ?? 0}
-            </span>
-            <button
-                onclick={(e) => handleVote(-1, e)}
-                class="hover:bg-gray-200 rounded p-1 transition-colors disabled:opacity-50"
-                class:text-indigo-500={post.userVote === -1}
-                class:text-gray-400={post.userVote !== -1}
-                disabled={isVoting}
-                aria-label="Downvote"
-            >
-                <svg
-                    class="w-6 h-6"
-                    fill={post.userVote === -1 ? "currentColor" : "none"}
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    ><path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M19 9l-7 7-7-7"
-                    ></path></svg
-                >
-            </button>
-        </div>
+            {#if post.author?.profilePicture}
+                <img
+                    src={post.author.profilePicture}
+                    alt={post.author.fullName}
+                    class="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-2 ring-gray-100 dark:ring-gray-700"
+                />
+            {:else}
+                <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
+                    {post.author?.firstName?.[0]?.toUpperCase() || '?'}
+                </div>
+            {/if}
+        </a>
 
-        <!-- Content Column -->
-        <div class="p-2 pb-1 flex-1">
-            <!-- Meta Header -->
-            <div class="flex items-center text-xs text-gray-500 mb-2 gap-1 flex-wrap">
-                <span class="{postTypeBadge.class} px-1.5 rounded-full border">
-                    {postTypeBadge.label}
-                </span>
-                {#if post.pet}
-                    {#if post.pet.status === "Adopted"}
-                        <span class="bg-green-100 text-green-700 px-1.5 rounded-full border border-green-200">
-                            Adopted
-                        </span>
-                    {:else}
-                        <span class="bg-indigo-100 text-indigo-700 px-1.5 rounded-full border border-indigo-200">
-                            Available
+        <!-- Author Info -->
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <a
+                    href={post.author ? `/user/${post.author.id}` : '#'}
+                    onclick={(e) => e.stopPropagation()}
+                    class="font-semibold text-sm sm:text-base text-gray-900 dark:text-white hover:underline truncate max-w-[140px] sm:max-w-none flex items-center gap-1"
+                >
+                    {post.author?.fullName || $_("post_card.unknown")}
+                    {#if post.author?.emailVerified || post.author?.phoneVerified}
+                        <span title={$_("common.verified")}>
+                            <BadgeCheck class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500 flex-shrink-0" />
                         </span>
                     {/if}
-                {/if}
-                {#if post.author}
-                    <a
-                        href="/user/{post.author.id}"
-                        onclick={(e) => e.stopPropagation()}
-                        class="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-                    >
-                        {#if post.author.profilePicture}
-                            <img src={post.author.profilePicture} alt={post.author.name} class="w-5 h-5 rounded-full object-cover" />
-                        {:else}
-                            <span class="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
-                                {post.author.name[0].toUpperCase()}
-                            </span>
-                        {/if}
-                        <span class="hover:underline font-semibold text-gray-700">
-                            u/{post.author.name}
-                        </span>
-                    </a>
-                {:else}
-                    <span class="text-gray-500">Unknown</span>
-                {/if}
-                <span>•</span>
-                <span>{formatDate(post.createdAt)}</span>
+                </a>
+                <span class="{postTypeBadge.class} text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
+                    {postTypeBadge.label}
+                </span>
+            </div>
+            <div class="flex items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <span>{formatRelativeTime(post.createdAt)}</span>
                 {#if post.location}
                     <span>•</span>
-                    <span class="flex items-center">
-                        <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                        </svg>
-                        {post.location}
+                    <span class="flex items-center gap-0.5 truncate max-w-[120px] sm:max-w-none">
+                        <MapPin class="w-3 h-3 flex-shrink-0" />
+                        <span class="truncate">{post.location}</span>
                     </span>
                 {/if}
             </div>
+        </div>
 
-            <!-- Title -->
-            <h3 class="text-lg font-medium text-gray-900 mb-2 leading-snug hover:text-indigo-600 transition-colors">
-                {post.title}
-            </h3>
+        <!-- More Options -->
+        <div class="relative">
+            <button
+                onclick={(e) => { e.stopPropagation(); showMoreMenu = !showMoreMenu; }}
+                class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+            >
+                <MoreHorizontal class="w-5 h-5 text-gray-500 dark:text-gray-400" />
+            </button>
 
-            <!-- Post Images (if any) -->
-            {#if post.images && post.images.length > 0}
-                <div class="mb-3">
-                    {#if post.images.length === 1}
+            {#if showMoreMenu}
+                <div class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-10 min-w-[140px]">
+                    {#if isOwner}
+                        <button
+                            onclick={(e) => { e.stopPropagation(); showMoreMenu = false; showEditModal = true; }}
+                            class="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                            <Pencil class="w-4 h-4" />
+                            {$_("common.edit")}
+                        </button>
+                        <button
+                            onclick={(e) => { e.stopPropagation(); showMoreMenu = false; showDeleteModal = true; }}
+                            class="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        >
+                            <Trash2 class="w-4 h-4" />
+                            {$_("common.delete")}
+                        </button>
+                    {:else if auth.user && post.author}
+                        <button
+                            onclick={(e) => { e.stopPropagation(); showMoreMenu = false; showReportModal = true; }}
+                            class="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        >
+                            <Flag class="w-4 h-4" />
+                            {$_("common.report")}
+                        </button>
+                    {/if}
+                    <button
+                        onclick={(e) => { e.stopPropagation(); showMoreMenu = false; handleShare(e); }}
+                        class="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                        <Share2 class="w-4 h-4" />
+                        {$_("common.share")}
+                    </button>
+                </div>
+                <button
+                    onclick={(e) => { e.stopPropagation(); showMoreMenu = false; }}
+                    class="fixed inset-0 z-[5]"
+                    aria-label="Close menu"
+                ></button>
+            {/if}
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div class="px-3 sm:px-4 pb-2 sm:pb-3">
+        <!-- Title -->
+        <h3 class="text-sm sm:text-base font-semibold text-gray-900 dark:text-white mb-1.5 sm:mb-2 leading-snug">
+            {post.title}
+        </h3>
+
+        <!-- Description -->
+        {#if post.description}
+            <div class="text-gray-700 dark:text-gray-300 text-xs sm:text-sm mb-2 sm:mb-3 line-clamp-3 prose prose-sm dark:prose-invert max-w-none prose-p:my-1">
+                {@html post.description}
+            </div>
+        {/if}
+
+        <!-- Tags -->
+        {#if post.tags && post.tags.length > 0}
+            <div class="flex flex-wrap gap-1 sm:gap-1.5 mb-2 sm:mb-3">
+                {#each post.tags.slice(0, 4) as tag}
+                    <span class="text-[11px] sm:text-xs text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+                        #{tag}
+                    </span>
+                {/each}
+                {#if post.tags.length > 4}
+                    <span class="text-[11px] sm:text-xs text-gray-400">+{post.tags.length - 4}</span>
+                {/if}
+            </div>
+        {/if}
+    </div>
+
+    <!-- Media (Images/Video) -->
+    {#if post.images && post.images.length > 0}
+        <div class="relative">
+            {#if post.images.length === 1}
+                <img
+                    src={post.images[0]}
+                    alt="Post image"
+                    class="w-full aspect-[16/10] object-cover select-none"
+                    draggable="false"
+                    oncontextmenu={(e) => e.preventDefault()}
+                />
+            {:else if post.images.length === 2}
+                <div class="grid grid-cols-2 gap-0.5">
+                    {#each post.images.slice(0, 2) as image, i}
                         <img
-                            src={post.images[0]}
-                            alt="Post image"
-                            class="w-full max-h-96 object-cover rounded-lg border border-gray-200 select-none pointer-events-none"
+                            src={image}
+                            alt="Post image {i + 1}"
+                            class="w-full aspect-square object-cover select-none"
                             draggable="false"
                             oncontextmenu={(e) => e.preventDefault()}
                         />
-                    {:else}
-                        <div class="grid grid-cols-2 gap-2">
-                            {#each post.images.slice(0, 4) as image, i}
-                                <div class="relative">
-                                    <img
-                                        src={image}
-                                        alt="Post image {i + 1}"
-                                        class="w-full h-40 object-cover rounded-lg border border-gray-200 select-none pointer-events-none"
-                                        draggable="false"
-                                        oncontextmenu={(e) => e.preventDefault()}
-                                    />
-                                    {#if i === 3 && post.images.length > 4}
-                                        <div class="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
-                                            <span class="text-white font-bold text-lg">+{post.images.length - 4}</span>
-                                        </div>
-                                    {/if}
-                                </div>
-                            {/each}
-                        </div>
-                    {/if}
-                </div>
-            {/if}
-
-            <!-- Post Video (if any) -->
-            {#if post.video}
-                <div class="mb-3" onclick={(e) => e.stopPropagation()}>
-                    <VideoPlayer src={post.video} compact={true} class="border border-gray-200" />
-                </div>
-            {/if}
-
-            <!-- Tags (if any) -->
-            {#if post.tags && post.tags.length > 0}
-                <div class="flex flex-wrap gap-1 mb-2">
-                    {#each post.tags as tag}
-                        <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                            #{tag}
-                        </span>
                     {/each}
                 </div>
-            {/if}
-
-            <!-- Pet Info (only if post has a pet) -->
-            {#if post.pet}
-                <div class="mb-3">
-                    <div class="bg-gray-100 rounded-lg p-3 border border-gray-200 flex gap-4">
-                        <!-- Pet Image -->
-                        <div class="w-24 h-24 bg-gray-200 rounded-md flex-shrink-0 flex items-center justify-center text-gray-400 overflow-hidden">
-                            {#if post.pet.coverImage}
-                                <img
-                                    src={post.pet.coverImage}
-                                    alt={post.pet.name}
-                                    class="w-full h-full object-cover select-none"
-                                    draggable="false"
-                                    oncontextmenu={(e) => e.preventDefault()}
-                                />
-                            {:else}
-                                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                </svg>
-                            {/if}
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-gray-800">
-                                {post.pet.name}
-                                <span class="font-normal text-gray-500 text-sm">
-                                    ({post.pet.species?.label || post.pet.customSpecies || "Unknown"})
-                                </span>
-                            </h4>
-                            <p class="text-sm text-gray-600 mt-1 line-clamp-2">
-                                {post.pet.description || "No description provided."}
-                            </p>
-                            <div class="flex gap-2 mt-2 text-xs font-medium">
-                                <span class="bg-gray-200 text-gray-700 px-2 py-0.5 rounded">
-                                    {post.pet.breed?.name || post.pet.customBreed || "Mixed"}
-                                </span>
-                                <span class="bg-gray-200 text-gray-700 px-2 py-0.5 rounded">
-                                    {post.pet.age ? `${post.pet.age} yrs` : "Age N/A"}
-                                </span>
-                            </div>
-                        </div>
+            {:else if post.images.length === 3}
+                <div class="grid grid-cols-2 gap-0.5">
+                    <img
+                        src={post.images[0]}
+                        alt="Post image 1"
+                        class="w-full aspect-square object-cover select-none row-span-2"
+                        draggable="false"
+                        oncontextmenu={(e) => e.preventDefault()}
+                    />
+                    <div class="grid grid-rows-2 gap-0.5">
+                        {#each post.images.slice(1, 3) as image, i}
+                            <img
+                                src={image}
+                                alt="Post image {i + 2}"
+                                class="w-full h-full object-cover select-none"
+                                draggable="false"
+                                oncontextmenu={(e) => e.preventDefault()}
+                            />
+                        {/each}
                     </div>
                 </div>
             {:else}
-                <!-- Post Description for general posts -->
-                <p class="text-gray-600 text-sm mb-3 line-clamp-3">
-                    {post.description}
-                </p>
-            {/if}
-
-            <!-- Actions Bar -->
-            <div class="flex items-center gap-1 text-gray-500 font-bold text-xs mt-1">
-                <div class="flex items-center gap-1.5 p-2 rounded group">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
-                    </svg>
-                    <span>{post.commentCount ?? 0} Comments</span>
+                <div class="grid grid-cols-2 gap-0.5">
+                    {#each post.images.slice(0, 4) as image, i}
+                        <div class="relative">
+                            <img
+                                src={image}
+                                alt="Post image {i + 1}"
+                                class="w-full aspect-square object-cover select-none"
+                                draggable="false"
+                                oncontextmenu={(e) => e.preventDefault()}
+                            />
+                            {#if i === 3 && post.images.length > 4}
+                                <div class="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                    <span class="text-white font-bold text-2xl">+{post.images.length - 4}</span>
+                                </div>
+                            {/if}
+                        </div>
+                    {/each}
                 </div>
+            {/if}
+        </div>
+    {/if}
+
+    {#if post.video}
+        <div onclick={(e) => e.stopPropagation()}>
+            <VideoPlayer src={post.video} compact={true} />
+        </div>
+    {/if}
+
+    <!-- Pet Card (if adoption/missing post) -->
+    {#if post.pet}
+        <div class="mx-3 sm:mx-4 my-2 sm:my-3">
+            <div class="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-700/30 rounded-xl p-2.5 sm:p-3 border border-gray-200 dark:border-gray-600">
+                <div class="flex gap-2.5 sm:gap-3">
+                    <!-- Pet Image -->
+                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200 dark:bg-gray-600">
+                        {#if post.pet.coverImage}
+                            <img
+                                src={post.pet.coverImage}
+                                alt={post.pet.name}
+                                class="w-full h-full object-cover"
+                                draggable="false"
+                            />
+                        {:else}
+                            <div class="w-full h-full flex items-center justify-center text-xl sm:text-2xl">🐾</div>
+                        {/if}
+                    </div>
+                    <!-- Pet Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <h4 class="font-bold text-sm sm:text-base text-gray-900 dark:text-white truncate max-w-[120px] sm:max-w-none">{post.pet.name}</h4>
+                            {#if post.pet.status === "Adopted"}
+                                <span class="text-[9px] sm:text-[10px] font-bold bg-green-500 text-white px-1.5 py-0.5 rounded-full">
+                                    {$_("post_card.adopted")}
+                                </span>
+                            {/if}
+                        </div>
+                        <p class="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 truncate">
+                            {post.pet.species?.label || post.pet.customSpecies || $_("post_card.unknown")} • {post.pet.breed?.name || post.pet.customBreed || $_("post_card.mixed")}
+                        </p>
+                        <div class="flex gap-1.5 sm:gap-2 mt-1 sm:mt-1.5 flex-wrap">
+                            {#if post.pet.age}
+                                <span class="text-[9px] sm:text-[10px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 sm:px-2 py-0.5 rounded-full font-medium">
+                                    {post.pet.age} {$_("post_card.yrs")}
+                                </span>
+                            {/if}
+                            {#if post.pet.gender}
+                                <span class="text-[9px] sm:text-[10px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 sm:px-2 py-0.5 rounded-full font-medium">
+                                    {post.pet.gender}
+                                </span>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    <!-- Contact Info (for adopt/missing posts) -->
+    {#if (post.postType === 'adopt' || post.postType === 'missing') && post.preferredContact}
+        <div class="mx-3 sm:mx-4 my-2 sm:my-3">
+            <div class="flex items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
+                {#if post.preferredContact === 'email' && post.contactEmail}
+                    <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
+                        <Mail class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 font-medium">{$_("post.contact_via_email")}</p>
+                        <a
+                            href="mailto:{post.contactEmail}"
+                            onclick={(e) => e.stopPropagation()}
+                            class="text-xs sm:text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline truncate block"
+                        >
+                            {post.contactEmail}
+                        </a>
+                    </div>
+                {:else if post.preferredContact === 'phone' && post.contactPhone}
+                    <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center flex-shrink-0">
+                        <Phone class="w-4 h-4 sm:w-5 sm:h-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 font-medium">{$_("post.contact_via_phone")}</p>
+                        <a
+                            href="tel:{post.contactPhoneCountryCode ? `+${post.contactPhoneCountryCode}` : ''}{post.contactPhone}"
+                            onclick={(e) => e.stopPropagation()}
+                            class="text-xs sm:text-sm font-semibold text-green-600 dark:text-green-400 hover:underline truncate block"
+                        >
+                            {#if post.contactPhoneCountryCode}+{post.contactPhoneCountryCode} {/if}{post.contactPhone}
+                        </a>
+                    </div>
+                {/if}
+            </div>
+        </div>
+    {/if}
+
+    <!-- Actions Bar -->
+    <div class="px-2 sm:px-4 py-2 sm:py-3 border-t border-gray-100 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <!-- Left Actions -->
+            <div class="flex items-center gap-0.5 sm:gap-1">
+                <!-- Like Button -->
                 <button
-                    onclick={(e) => { e.stopPropagation(); alert('Share feature coming soon!'); }}
-                    class="flex items-center gap-1.5 hover:bg-gray-200 p-2 rounded transition-colors group"
+                    onclick={handleLike}
+                    disabled={isVoting}
+                    class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 group"
                 >
-                    <svg class="w-5 h-5 group-hover:text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
-                    </svg>
-                    <span class="group-hover:text-indigo-600">Share</span>
+                    <Heart
+                        class="w-5 h-5 transition-all {isLiked ? 'text-red-500 fill-red-500 scale-110' : 'text-gray-500 dark:text-gray-400 group-hover:text-red-500'}"
+                    />
+                    {#if likeCount > 0}
+                        <span class="text-xs sm:text-sm font-medium {isLiked ? 'text-red-500' : 'text-gray-600 dark:text-gray-400'}">
+                            {likeCount}
+                        </span>
+                    {/if}
                 </button>
 
-                <!-- Adopt button for adoption posts -->
-                {#if post.pet && post.postType === 'adopt'}
+                <!-- Comment Button -->
+                <button
+                    onclick={(e) => { e.stopPropagation(); navigateToPost(); }}
+                    class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                >
+                    <MessageCircle class="w-5 h-5 text-gray-500 dark:text-gray-400 group-hover:text-indigo-500" />
+                    {#if (post.commentCount ?? 0) > 0}
+                        <span class="text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400">{post.commentCount}</span>
+                    {/if}
+                </button>
+
+                <!-- Share Button -->
+                <button
+                    onclick={handleShare}
+                    class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                >
+                    <Share2 class="w-5 h-5 text-gray-500 dark:text-gray-400 group-hover:text-indigo-500" />
+                </button>
+            </div>
+
+            <!-- Right Actions -->
+            <div class="flex items-center gap-0.5 sm:gap-1">
+                <!-- Report Button (hidden on mobile to save space, available in more menu) -->
+                {#if auth.user && post.author && post.author.id !== auth.user.id}
+                    <button
+                        onclick={(e) => { e.stopPropagation(); showReportModal = true; }}
+                        class="hidden sm:flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors group"
+                        title={$_("common.report")}
+                    >
+                        <Flag class="w-5 h-5 text-gray-500 dark:text-gray-400 group-hover:text-red-500" />
+                    </button>
+                {/if}
+
+                <!-- Save Button -->
+                <button
+                    onclick={handleSave}
+                    disabled={isSaving}
+                    class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group disabled:opacity-50"
+                >
+                    <Bookmark
+                        class="w-5 h-5 transition-all {isSaved ? 'text-indigo-500 fill-indigo-500' : 'text-gray-500 dark:text-gray-400 group-hover:text-indigo-500'}"
+                    />
+                </button>
+
+                <!-- Adopt Button (for adoption posts) -->
+                {#if post.pet && post.postType === 'adopt' && post.pet.status !== "Adopted"}
                     <button
                         onclick={(e) => {
                             e.stopPropagation();
                             if (!auth.user) {
                                 window.location.href = "/login";
                             } else {
-                                alert("Contact feature coming soon!");
+                                navigateToPost();
                             }
                         }}
-                        class="ml-auto flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-full transition-colors shadow-sm"
-                        aria-label="Adopt this pet"
+                        class="flex items-center gap-1 sm:gap-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-[11px] sm:text-sm font-semibold px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full transition-all shadow-sm hover:shadow-md active:scale-95"
                     >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-                        </svg>
-                        Adopt
+                        <Heart class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        {$_("common.adopt")}
                     </button>
                 {/if}
             </div>
         </div>
     </div>
 </div>
+
+<!-- Report Modal -->
+<ReportPostModal
+    bind:open={showReportModal}
+    postId={post.id}
+    onClose={() => showReportModal = false}
+/>
+
+<!-- Edit Modal -->
+<EditPostModal
+    bind:open={showEditModal}
+    {post}
+    onClose={() => showEditModal = false}
+    onPostUpdated={(updatedPost) => {
+        showEditModal = false;
+        if (onPostUpdated) onPostUpdated(updatedPost);
+    }}
+/>
+
+<!-- Delete Modal -->
+<DeletePostModal
+    bind:open={showDeleteModal}
+    {post}
+    onClose={() => showDeleteModal = false}
+    onPostDeleted={() => {
+        showDeleteModal = false;
+        if (onPostDeleted) onPostDeleted();
+    }}
+/>

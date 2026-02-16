@@ -4,11 +4,12 @@
     import { toast } from "$lib/stores/toast.svelte";
     import { onMount } from "svelte";
     import SEO from "$lib/components/SEO.svelte";
+    import { _ } from "$lib/i18n";
+    import gsap from "gsap";
     import {
         ArrowLeft,
         MapPin,
         Calendar,
-        User,
         Heart,
         MessageCircle,
         Share2,
@@ -16,8 +17,19 @@
         ChevronRight,
         X,
         Send,
+        Flag,
+        Bookmark,
+        MoreHorizontal,
+        PawPrint,
+        Mail,
+        Phone,
     } from "lucide-svelte";
     import VideoPlayer from "$lib/components/VideoPlayer.svelte";
+    import ReportPostModal from "$lib/components/ReportPostModal.svelte";
+    import EditPostModal from "$lib/components/EditPostModal.svelte";
+    import DeletePostModal from "$lib/components/DeletePostModal.svelte";
+    import { Pencil, Trash2 } from "lucide-svelte";
+    import { goto } from "$app/navigation";
 
     let post = $state<any>(null);
     let loading = $state(true);
@@ -27,9 +39,42 @@
     let newComment = $state("");
     let submittingComment = $state(false);
     let isVoting = $state(false);
+    let isSaved = $state(false);
 
     // Image gallery state
     let selectedImageIndex = $state<number | null>(null);
+
+    // Report modal state
+    let showReportModal = $state(false);
+    let showEditModal = $state(false);
+    let showDeleteModal = $state(false);
+
+    // Check if current user is the owner
+    let isOwner = $derived(auth.user && post?.author && post.author.id === auth.user.id);
+
+    // GSAP animation refs
+    let postCardEl: HTMLDivElement | null = $state(null);
+    let headerEl: HTMLDivElement | null = $state(null);
+    let contentEl: HTMLDivElement | null = $state(null);
+    let actionsEl: HTMLDivElement | null = $state(null);
+    let commentsEl: HTMLDivElement | null = $state(null);
+    let hasAnimated = $state(false);
+
+    // Detect if user came from internal navigation or shared link
+    let hasInternalHistory = $state(false);
+
+    $effect(() => {
+        // Check if referrer is from the same origin (internal navigation)
+        if (typeof document !== "undefined") {
+            const referrer = document.referrer;
+            const currentOrigin = window.location.origin;
+            hasInternalHistory = referrer.startsWith(currentOrigin);
+        }
+    });
+
+    // Derived states for like functionality
+    let isLiked = $derived(post?.userVote === 1);
+    let likeCount = $derived(post?.upvotes ?? 0);
 
     $effect(() => {
         const postId = $page.params.id;
@@ -57,6 +102,11 @@
                                 title
                                 description
                                 postType
+                                reportType
+                                preferredContact
+                                contactEmail
+                                contactPhone
+                                contactPhoneCountryCode
                                 tags
                                 images
                                 video
@@ -69,8 +119,12 @@
                                 commentCount
                                 author {
                                     id
-                                    name
+                                    firstName
+                                    lastName
+                                    fullName
                                     profilePicture
+                                    emailVerified
+                                    phoneVerified
                                 }
                                 pet {
                                     id
@@ -99,6 +153,14 @@
             if (!result.data.post) throw new Error("Post not found");
 
             post = result.data.post;
+
+            // Run entrance animations after post loads
+            if (!hasAnimated) {
+                hasAnimated = true;
+                requestAnimationFrame(() => {
+                    runEntranceAnimations();
+                });
+            }
         } catch (e: any) {
             error = e.message;
         } finally {
@@ -124,8 +186,12 @@
                                 createdAt
                                 author {
                                     id
-                                    name
+                                    firstName
+                                    lastName
+                                    fullName
                                     profilePicture
+                                    emailVerified
+                                    phoneVerified
                                 }
                                 replies {
                                     id
@@ -133,7 +199,9 @@
                                     createdAt
                                     author {
                                         id
-                                        name
+                                        firstName
+                                        lastName
+                                        fullName
                                         profilePicture
                                     }
                                 }
@@ -155,7 +223,61 @@
         }
     }
 
-    async function handleVote(value: number) {
+    function runEntranceAnimations() {
+        const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
+
+        // Animate post card container
+        if (postCardEl) {
+            tl.fromTo(
+                postCardEl,
+                { opacity: 0, y: 30 },
+                { opacity: 1, y: 0, duration: 0.5 },
+                0
+            );
+        }
+
+        // Animate header
+        if (headerEl) {
+            tl.fromTo(
+                headerEl,
+                { opacity: 0, x: -20 },
+                { opacity: 1, x: 0, duration: 0.4 },
+                0.1
+            );
+        }
+
+        // Animate content
+        if (contentEl) {
+            tl.fromTo(
+                contentEl,
+                { opacity: 0, y: 15 },
+                { opacity: 1, y: 0, duration: 0.4 },
+                0.2
+            );
+        }
+
+        // Animate actions
+        if (actionsEl) {
+            tl.fromTo(
+                actionsEl,
+                { opacity: 0, y: 10 },
+                { opacity: 1, y: 0, duration: 0.3 },
+                0.3
+            );
+        }
+
+        // Animate comments
+        if (commentsEl) {
+            tl.fromTo(
+                commentsEl,
+                { opacity: 0, y: 20 },
+                { opacity: 1, y: 0, duration: 0.4 },
+                0.35
+            );
+        }
+    }
+
+    async function handleLike() {
         if (!auth.user || !auth.token) {
             window.location.href = "/login";
             return;
@@ -164,7 +286,7 @@
         isVoting = true;
 
         try {
-            const shouldRemove = post.userVote === value;
+            const shouldRemove = post.userVote === 1;
             const response = await fetch("/api/graphql", {
                 method: "POST",
                 headers: {
@@ -175,7 +297,7 @@
                     query: shouldRemove
                         ? `mutation RemoveVote($postId: ID!) { removeVote(postId: $postId) { id voteScore upvotes downvotes userVote } }`
                         : `mutation VotePost($postId: ID!, $value: Int!) { votePost(postId: $postId, value: $value) { id voteScore upvotes downvotes userVote } }`,
-                    variables: shouldRemove ? { postId: post.id } : { postId: post.id, value },
+                    variables: shouldRemove ? { postId: post.id } : { postId: post.id, value: 1 },
                 }),
             });
 
@@ -188,7 +310,7 @@
             post.downvotes = updatedPost.downvotes;
             post.userVote = updatedPost.userVote;
         } catch (e: any) {
-            toast.error(e.message || "Failed to vote");
+            toast.error(e.message || $_("common.failed_vote"));
         } finally {
             isVoting = false;
         }
@@ -218,8 +340,12 @@
                                 createdAt
                                 author {
                                     id
-                                    name
+                                    firstName
+                                    lastName
+                                    fullName
                                     profilePicture
+                                    emailVerified
+                                    phoneVerified
                                 }
                             }
                         }
@@ -234,15 +360,33 @@
             comments = [result.data.createComment, ...comments];
             post.commentCount = (post.commentCount || 0) + 1;
             newComment = "";
-            toast.success("Comment added!");
+            toast.success($_("common.comment_added"));
         } catch (e: any) {
-            toast.error(e.message || "Failed to add comment");
+            toast.error(e.message || $_("common.failed_comment"));
         } finally {
             submittingComment = false;
         }
     }
 
-    function formatDate(dateStr: string) {
+    function formatRelativeTime(dateStr: string) {
+        const d = new Date(Number(dateStr));
+        const now = new Date();
+        const diffMs = now.getTime() - d.getTime();
+        const diffSecs = Math.floor(diffMs / 1000);
+        const diffMins = Math.floor(diffSecs / 60);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        const diffWeeks = Math.floor(diffDays / 7);
+
+        if (diffSecs < 60) return $_("time.just_now");
+        if (diffMins < 60) return $_("time.mins_ago", { values: { count: diffMins } });
+        if (diffHours < 24) return $_("time.hours_ago", { values: { count: diffHours } });
+        if (diffDays < 7) return $_("time.days_ago", { values: { count: diffDays } });
+        if (diffWeeks < 4) return $_("time.weeks_ago", { values: { count: diffWeeks } });
+        return d.toLocaleDateString();
+    }
+
+    function formatFullDate(dateStr: string) {
         const d = new Date(Number(dateStr));
         return d.toLocaleDateString("en-US", {
             year: "numeric",
@@ -253,23 +397,53 @@
         });
     }
 
-    function getPostTypeBadge(postType: string) {
+    function getPostTypeBadge(postType: string, reportType?: string) {
         switch (postType) {
             case "adopt":
-                return { label: "Adoption", class: "bg-green-100 text-green-700" };
+                return { label: $_("post.adoption"), class: "bg-green-500 text-white" };
             case "missing":
-                return { label: "Missing Pet", class: "bg-red-100 text-red-700" };
+                if (reportType === "lost") {
+                    return { label: $_("post.lost_pet"), class: "bg-red-500 text-white" };
+                }
+                if (reportType === "found") {
+                    return { label: $_("post.found_pet"), class: "bg-orange-500 text-white" };
+                }
+                return { label: $_("post.missing_pet"), class: "bg-red-500 text-white" };
             default:
-                return { label: "General Post", class: "bg-blue-100 text-blue-700" };
+                return { label: $_("post.general_post"), class: "bg-indigo-500 text-white" };
         }
+    }
+
+    function handleShare() {
+        const url = `${window.location.origin}/post/${post.id}`;
+        if (navigator.share) {
+            navigator.share({
+                title: post.title,
+                text: post.description?.slice(0, 100) || post.title,
+                url: url
+            }).catch(() => {});
+        } else {
+            navigator.clipboard.writeText(url).then(() => {
+                toast.success($_("common.link_copied"));
+            }).catch(() => {
+                toast.error($_("common.copy_failed"));
+            });
+        }
+    }
+
+    function handleSave() {
+        isSaved = !isSaved;
+        toast.success(isSaved ? $_("post.saved") : $_("post.unsaved"));
     }
 
     function openGallery(index: number) {
         selectedImageIndex = index;
+        document.body.style.overflow = "hidden";
     }
 
     function closeGallery() {
         selectedImageIndex = null;
+        document.body.style.overflow = "";
     }
 
     function nextImage() {
@@ -303,7 +477,7 @@
     }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if post}
     <SEO
@@ -315,96 +489,208 @@
     />
 {/if}
 
-<div class="bg-gray-50 min-h-screen">
+<div class="bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors pb-20">
     {#if loading}
-        <div class="max-w-4xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-2xl p-8 animate-pulse">
-                <div class="h-8 bg-gray-200 rounded w-3/4 mb-4"></div>
-                <div class="h-64 bg-gray-200 rounded-xl mb-4"></div>
-                <div class="h-4 bg-gray-200 rounded w-full mb-2"></div>
-                <div class="h-4 bg-gray-200 rounded w-2/3"></div>
+        <!-- Skeleton Loader -->
+        <div class="max-w-2xl mx-auto px-4 py-6">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-pulse">
+                <!-- Header Skeleton -->
+                <div class="p-4 flex items-center gap-3">
+                    <div class="w-12 h-12 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                    <div class="flex-1">
+                        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-32 mb-2"></div>
+                        <div class="h-3 bg-gray-200 dark:bg-gray-700 rounded w-24"></div>
+                    </div>
+                    <div class="h-6 bg-gray-200 dark:bg-gray-700 rounded-full w-20"></div>
+                </div>
+                <!-- Image Skeleton -->
+                <div class="aspect-video bg-gray-200 dark:bg-gray-700"></div>
+                <!-- Content Skeleton -->
+                <div class="p-4 space-y-3">
+                    <div class="h-6 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                    <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
+                    <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6"></div>
+                </div>
+                <!-- Actions Skeleton -->
+                <div class="px-4 py-3 border-t border-gray-100 dark:border-gray-700 flex gap-4">
+                    <div class="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                    <div class="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                    <div class="h-8 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                </div>
             </div>
         </div>
     {:else if error}
-        <div class="max-w-4xl mx-auto px-4 py-8">
-            <div class="bg-red-50 text-red-600 p-8 rounded-2xl text-center">
+        <div class="max-w-2xl mx-auto px-4 py-8">
+            <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-8 rounded-2xl text-center border border-red-100 dark:border-red-800">
                 <p class="text-lg font-medium">{error}</p>
-                <a href="/" class="mt-4 inline-block px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                    Go back home
+                <a href="/" class="mt-4 inline-block px-6 py-2.5 bg-red-600 text-white rounded-full font-medium hover:bg-red-700 transition-colors">
+                    {$_("post.go_back_home")}
                 </a>
             </div>
         </div>
     {:else if post}
-        <div class="max-w-4xl mx-auto px-4 py-6">
-            <!-- Back button -->
-            <a
-                href="/"
-                class="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 font-medium"
-            >
-                <ArrowLeft class="w-5 h-5" />
-                Back to feed
-            </a>
+        <div class="max-w-2xl mx-auto px-4 py-6">
+            <!-- Back button - only show if user came from internal navigation -->
+            {#if hasInternalHistory}
+                <button
+                    onclick={() => history.back()}
+                    class="inline-flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 font-medium transition-colors group"
+                >
+                    <ArrowLeft class="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                    {$_("post.go_back")}
+                </button>
+            {:else}
+                <!-- User came from shared link - show Go to Feed instead -->
+                <a
+                    href="/"
+                    class="inline-flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4 font-medium transition-colors group"
+                >
+                    <ArrowLeft class="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                    {$_("post.go_to_feed")}
+                </a>
+            {/if}
 
             <!-- Main Post Card -->
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div
+                bind:this={postCardEl}
+                class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors"
+                style="opacity: 0;"
+            >
                 <!-- Post Header -->
-                <div class="p-6 border-b border-gray-100">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
-                                {#if post.author.profilePicture}
-                                    <img src={post.author.profilePicture} alt={post.author.name} class="w-full h-full object-cover" />
-                                {:else}
-                                    {post.author.name[0].toUpperCase()}
-                                {/if}
+                <div bind:this={headerEl} class="p-4 flex items-center gap-3" style="opacity: 0;">
+                    <!-- Author Avatar -->
+                    <a
+                        href={`/user/${post.author.id}`}
+                        class="flex-shrink-0"
+                    >
+                        {#if post.author.profilePicture}
+                            <img
+                                src={post.author.profilePicture}
+                                alt={post.author.fullName}
+                                class="w-12 h-12 rounded-full object-cover border-2 border-gray-100 dark:border-gray-700 hover:border-indigo-500 transition-colors"
+                            />
+                        {:else}
+                            <div class="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                                {post.author.firstName?.[0]?.toUpperCase() || '?'}
                             </div>
-                            <div>
-                                <p class="font-semibold text-gray-900">{post.author.name}</p>
-                                <p class="text-sm text-gray-500 flex items-center gap-1">
-                                    <Calendar class="w-3.5 h-3.5" />
-                                    {formatDate(post.createdAt)}
-                                </p>
-                            </div>
+                        {/if}
+                    </a>
+
+                    <!-- Author Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <a
+                                href={`/user/${post.author.id}`}
+                                class="font-semibold text-gray-900 dark:text-white hover:underline"
+                            >
+                                {post.author.fullName}
+                            </a>
+                            <span class="{getPostTypeBadge(post.postType, post.reportType).class} text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                {getPostTypeBadge(post.postType, post.reportType).label}
+                            </span>
                         </div>
-                        <span class="{getPostTypeBadge(post.postType).class} px-3 py-1 rounded-full text-sm font-medium">
-                            {getPostTypeBadge(post.postType).label}
-                        </span>
+                        <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            <span>{formatRelativeTime(post.createdAt)}</span>
+                            {#if post.location}
+                                <span>•</span>
+                                <span class="flex items-center gap-0.5">
+                                    <MapPin class="w-3 h-3" />
+                                    {post.location}
+                                </span>
+                            {/if}
+                        </div>
                     </div>
 
-                    <h1 class="text-2xl font-bold text-gray-900 mb-2">{post.title}</h1>
-
-                    {#if post.location}
-                        <p class="text-gray-500 flex items-center gap-1 text-sm">
-                            <MapPin class="w-4 h-4" />
-                            {post.location}
-                        </p>
-                    {/if}
+                    <!-- More Options -->
+                    <div class="flex items-center gap-1">
+                        {#if isOwner}
+                            <button
+                                onclick={() => showEditModal = true}
+                                class="p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-full transition-colors group"
+                                title={$_("common.edit")}
+                            >
+                                <Pencil class="w-5 h-5 text-gray-400 group-hover:text-indigo-500" />
+                            </button>
+                            <button
+                                onclick={() => showDeleteModal = true}
+                                class="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors group"
+                                title={$_("common.delete")}
+                            >
+                                <Trash2 class="w-5 h-5 text-gray-400 group-hover:text-red-500" />
+                            </button>
+                        {:else if auth.user && post.author.id !== auth.user.id}
+                            <button
+                                onclick={() => showReportModal = true}
+                                class="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors group"
+                                title={$_("common.report")}
+                            >
+                                <Flag class="w-5 h-5 text-gray-400 group-hover:text-red-500" />
+                            </button>
+                        {/if}
+                    </div>
                 </div>
 
                 <!-- Post Images -->
                 {#if post.images && post.images.length > 0}
-                    <div class="border-b border-gray-100">
+                    <div class="border-t border-b border-gray-100 dark:border-gray-700">
                         {#if post.images.length === 1}
                             <button onclick={() => openGallery(0)} class="w-full">
                                 <img
                                     src={post.images[0]}
                                     alt="Post image"
-                                    class="w-full max-h-[600px] object-contain bg-gray-900 cursor-pointer select-none"
+                                    class="w-full max-h-[500px] object-contain bg-gray-900 cursor-pointer select-none"
                                     draggable="false"
                                     oncontextmenu={(e) => e.preventDefault()}
                                 />
                             </button>
+                        {:else if post.images.length === 2}
+                            <div class="grid grid-cols-2 gap-0.5">
+                                {#each post.images as image, i}
+                                    <button onclick={() => openGallery(i)} class="aspect-square overflow-hidden">
+                                        <img
+                                            src={image}
+                                            alt="Post image {i + 1}"
+                                            class="w-full h-full object-cover hover:opacity-95 transition-opacity select-none"
+                                            draggable="false"
+                                            oncontextmenu={(e) => e.preventDefault()}
+                                        />
+                                    </button>
+                                {/each}
+                            </div>
+                        {:else if post.images.length === 3}
+                            <div class="grid grid-cols-2 gap-0.5">
+                                <button onclick={() => openGallery(0)} class="row-span-2 aspect-[3/4] overflow-hidden">
+                                    <img
+                                        src={post.images[0]}
+                                        alt="Post image 1"
+                                        class="w-full h-full object-cover hover:opacity-95 transition-opacity select-none"
+                                        draggable="false"
+                                        oncontextmenu={(e) => e.preventDefault()}
+                                    />
+                                </button>
+                                {#each post.images.slice(1, 3) as image, i}
+                                    <button onclick={() => openGallery(i + 1)} class="aspect-square overflow-hidden">
+                                        <img
+                                            src={image}
+                                            alt="Post image {i + 2}"
+                                            class="w-full h-full object-cover hover:opacity-95 transition-opacity select-none"
+                                            draggable="false"
+                                            oncontextmenu={(e) => e.preventDefault()}
+                                        />
+                                    </button>
+                                {/each}
+                            </div>
                         {:else}
-                            <div class="grid grid-cols-2 gap-1">
+                            <div class="grid grid-cols-2 gap-0.5">
                                 {#each post.images.slice(0, 4) as image, i}
                                     <button
                                         onclick={() => openGallery(i)}
-                                        class="relative aspect-square overflow-hidden cursor-pointer"
+                                        class="relative aspect-square overflow-hidden"
                                     >
                                         <img
                                             src={image}
                                             alt="Post image {i + 1}"
-                                            class="w-full h-full object-cover hover:opacity-90 transition-opacity select-none"
+                                            class="w-full h-full object-cover hover:opacity-95 transition-opacity select-none"
                                             draggable="false"
                                             oncontextmenu={(e) => e.preventDefault()}
                                         />
@@ -422,172 +708,253 @@
 
                 <!-- Post Video -->
                 {#if post.video}
-                    <div class="p-4 border-b border-gray-100">
+                    <div class="border-t border-b border-gray-100 dark:border-gray-700">
                         <VideoPlayer src={post.video} />
                     </div>
                 {/if}
 
-                <!-- Post Description -->
-                <div class="p-6 border-b border-gray-100">
-                    <p class="text-gray-700 whitespace-pre-wrap leading-relaxed">{post.description}</p>
+                <!-- Post Content -->
+                <div bind:this={contentEl} class="p-4" style="opacity: 0;">
+                    <!-- Title -->
+                    <h1 class="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                        {post.title}
+                    </h1>
+
+                    <!-- Description -->
+                    {#if post.description}
+                        <div class="text-gray-700 dark:text-gray-300 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-strong:font-semibold prose-a:text-indigo-600 dark:prose-a:text-indigo-400 prose-a:no-underline hover:prose-a:underline">
+                            {@html post.description}
+                        </div>
+                    {/if}
 
                     <!-- Tags -->
                     {#if post.tags && post.tags.length > 0}
                         <div class="flex flex-wrap gap-2 mt-4">
                             {#each post.tags as tag}
-                                <span class="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-sm">
+                                <span class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-3 py-1 rounded-full text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
                                     #{tag}
                                 </span>
                             {/each}
                         </div>
                     {/if}
+
+                    <!-- Posted date full -->
+                    <p class="text-xs text-gray-400 dark:text-gray-500 mt-4">
+                        {formatFullDate(post.createdAt)}
+                    </p>
                 </div>
 
-                <!-- Pet Info (if applicable) -->
+                <!-- Pet Info Card -->
                 {#if post.pet}
-                    <div class="p-6 bg-gray-50 border-b border-gray-100">
-                        <h3 class="font-semibold text-gray-900 mb-4">Pet Information</h3>
+                    <div class="mx-4 mb-4 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-2xl p-4 border border-indigo-100 dark:border-indigo-800/50">
+                        <div class="flex items-center gap-2 mb-3">
+                            <PawPrint class="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                            <h3 class="font-semibold text-gray-900 dark:text-white">{$_("post.pet_info")}</h3>
+                        </div>
                         <div class="flex gap-4">
                             {#if post.pet.coverImage}
                                 <button
                                     onclick={() => openGallery(post.images?.length || 0)}
-                                    class="w-32 h-32 rounded-xl overflow-hidden flex-shrink-0 cursor-pointer"
+                                    class="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0 shadow-md hover:shadow-lg transition-shadow"
                                 >
                                     <img
                                         src={post.pet.coverImage}
                                         alt={post.pet.name}
                                         draggable="false"
                                         oncontextmenu={(e) => e.preventDefault()}
-                                        class="w-full h-full object-cover hover:opacity-90 transition-opacity"
+                                        class="w-full h-full object-cover"
                                     />
                                 </button>
                             {/if}
-                            <div class="flex-1">
-                                <h4 class="text-xl font-bold text-gray-900">{post.pet.name}</h4>
-                                <p class="text-gray-600">
+                            <div class="flex-1 min-w-0">
+                                <h4 class="text-lg font-bold text-gray-900 dark:text-white">{post.pet.name}</h4>
+                                <p class="text-sm text-gray-600 dark:text-gray-300">
                                     {post.pet.species?.label || post.pet.customSpecies || "Unknown species"}
-                                    {post.pet.breed?.name || post.pet.customBreed ? ` - ${post.pet.breed?.name || post.pet.customBreed}` : ""}
+                                    {post.pet.breed?.name || post.pet.customBreed ? ` • ${post.pet.breed?.name || post.pet.customBreed}` : ""}
                                 </p>
-                                <div class="flex flex-wrap gap-2 mt-3">
+                                <div class="flex flex-wrap gap-1.5 mt-2">
                                     {#if post.pet.age}
-                                        <span class="bg-white border border-gray-200 px-3 py-1 rounded-full text-sm text-gray-700">
-                                            {post.pet.age} years old
+                                        <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
+                                            {$_("post.years_old", { values: { age: post.pet.age } })}
                                         </span>
                                     {/if}
                                     {#if post.pet.gender && post.pet.gender !== "Unknown"}
-                                        <span class="bg-white border border-gray-200 px-3 py-1 rounded-full text-sm text-gray-700">
+                                        <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
                                             {post.pet.gender}
                                         </span>
                                     {/if}
                                     {#if post.pet.size}
-                                        <span class="bg-white border border-gray-200 px-3 py-1 rounded-full text-sm text-gray-700">
+                                        <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
                                             {post.pet.size}
                                         </span>
                                     {/if}
-                                    <span class="px-3 py-1 rounded-full text-sm font-medium {post.pet.status === 'Adopted' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}">
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-medium {post.pet.status === 'Adopted' ? 'bg-green-500 text-white' : 'bg-indigo-500 text-white'}">
                                         {post.pet.status}
                                     </span>
                                 </div>
-                                {#if post.pet.description}
-                                    <p class="text-gray-600 mt-3 text-sm">{post.pet.description}</p>
-                                {/if}
                             </div>
                         </div>
                     </div>
                 {/if}
 
+                <!-- Contact Info Section (for adopt/missing posts) -->
+                {#if (post.postType === 'adopt' || post.postType === 'missing') && post.preferredContact}
+                    <div class="mx-4 mb-4 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-2xl p-4 border border-indigo-100 dark:border-indigo-800/50">
+                        <h3 class="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                            {#if post.preferredContact === 'email'}
+                                <Mail class="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                            {:else}
+                                <Phone class="w-5 h-5 text-green-600 dark:text-green-400" />
+                            {/if}
+                            {$_("post.contact_info")}
+                        </h3>
+
+                        {#if post.preferredContact === 'email' && post.contactEmail}
+                            <div class="flex items-center gap-3 bg-white dark:bg-gray-700/50 rounded-xl p-3">
+                                <div class="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center flex-shrink-0">
+                                    <Mail class="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">{$_("post.contact_via_email")}</p>
+                                    <a
+                                        href="mailto:{post.contactEmail}"
+                                        class="text-lg font-semibold text-indigo-600 dark:text-indigo-400 hover:underline break-all"
+                                    >
+                                        {post.contactEmail}
+                                    </a>
+                                </div>
+                            </div>
+                        {:else if post.preferredContact === 'phone' && post.contactPhone}
+                            <div class="flex items-center gap-3 bg-white dark:bg-gray-700/50 rounded-xl p-3">
+                                <div class="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center flex-shrink-0">
+                                    <Phone class="w-6 h-6 text-green-600 dark:text-green-400" />
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">{$_("post.contact_via_phone")}</p>
+                                    <a
+                                        href="tel:{post.contactPhoneCountryCode ? `+${post.contactPhoneCountryCode}` : ''}{post.contactPhone}"
+                                        class="text-lg font-semibold text-green-600 dark:text-green-400 hover:underline"
+                                    >
+                                        {#if post.contactPhoneCountryCode}+{post.contactPhoneCountryCode} {/if}{post.contactPhone}
+                                    </a>
+                                </div>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+
                 <!-- Actions Bar -->
-                <div class="p-4 flex items-center gap-4 border-b border-gray-100">
-                    <div class="flex items-center gap-1">
-                        <button
-                            onclick={() => handleVote(1)}
-                            class="p-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
-                            class:text-orange-500={post.userVote === 1}
-                            class:text-gray-500={post.userVote !== 1}
-                            disabled={isVoting}
-                        >
-                            <svg class="w-6 h-6" fill={post.userVote === 1 ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
-                            </svg>
-                        </button>
-                        <span class="font-bold text-lg min-w-[2rem] text-center" class:text-orange-500={post.voteScore > 0} class:text-indigo-500={post.voteScore < 0}>
-                            {post.voteScore ?? 0}
-                        </span>
-                        <button
-                            onclick={() => handleVote(-1)}
-                            class="p-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
-                            class:text-indigo-500={post.userVote === -1}
-                            class:text-gray-500={post.userVote !== -1}
-                            disabled={isVoting}
-                        >
-                            <svg class="w-6 h-6" fill={post.userVote === -1 ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                            </svg>
-                        </button>
+                <div bind:this={actionsEl} class="px-4 py-3 border-t border-gray-100 dark:border-gray-700" style="opacity: 0;">
+                    <div class="flex items-center justify-between">
+                        <!-- Left Actions -->
+                        <div class="flex items-center gap-1">
+                            <!-- Like Button -->
+                            <button
+                                onclick={handleLike}
+                                disabled={isVoting}
+                                class="flex items-center gap-1.5 px-3 py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 group"
+                            >
+                                <Heart
+                                    class="w-6 h-6 transition-all {isLiked ? 'text-red-500 fill-red-500 scale-110' : 'text-gray-500 dark:text-gray-400 group-hover:text-red-500'}"
+                                />
+                                {#if likeCount > 0}
+                                    <span class="text-sm font-semibold {isLiked ? 'text-red-500' : 'text-gray-600 dark:text-gray-400'}">
+                                        {likeCount}
+                                    </span>
+                                {/if}
+                            </button>
+
+                            <!-- Comment Button -->
+                            <button
+                                onclick={() => document.getElementById('comment-input')?.focus()}
+                                class="flex items-center gap-1.5 px-3 py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                            >
+                                <MessageCircle class="w-6 h-6 text-gray-500 dark:text-gray-400 group-hover:text-indigo-500" />
+                                {#if (post.commentCount ?? 0) > 0}
+                                    <span class="text-sm font-semibold text-gray-600 dark:text-gray-400">{post.commentCount}</span>
+                                {/if}
+                            </button>
+
+                            <!-- Share Button -->
+                            <button
+                                onclick={handleShare}
+                                class="flex items-center gap-1.5 px-3 py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                            >
+                                <Share2 class="w-6 h-6 text-gray-500 dark:text-gray-400 group-hover:text-indigo-500" />
+                            </button>
+                        </div>
+
+                        <!-- Right Actions -->
+                        <div class="flex items-center gap-1">
+                            <!-- Save Button -->
+                            <button
+                                onclick={handleSave}
+                                class="flex items-center gap-1.5 px-3 py-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
+                            >
+                                <Bookmark
+                                    class="w-6 h-6 transition-all {isSaved ? 'text-indigo-500 fill-indigo-500' : 'text-gray-500 dark:text-gray-400 group-hover:text-indigo-500'}"
+                                />
+                            </button>
+
+                            <!-- Adopt Button -->
+                            {#if post.pet && post.postType === "adopt" && post.pet.status !== "Adopted"}
+                                <button
+                                    onclick={() => {
+                                        if (!auth.user) {
+                                            window.location.href = "/login";
+                                        } else {
+                                            toast.info($_("post.contact_coming"));
+                                        }
+                                    }}
+                                    class="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-5 py-2 rounded-full font-semibold transition-all shadow-md hover:shadow-lg active:scale-95"
+                                >
+                                    <Heart class="w-5 h-5" />
+                                    {$_("common.adopt")}
+                                </button>
+                            {/if}
+                        </div>
                     </div>
-
-                    <div class="flex items-center gap-2 text-gray-500">
-                        <MessageCircle class="w-5 h-5" />
-                        <span class="font-medium">{post.commentCount ?? 0} comments</span>
-                    </div>
-
-                    <button class="flex items-center gap-2 text-gray-500 hover:text-gray-700 ml-auto">
-                        <Share2 class="w-5 h-5" />
-                        <span class="font-medium">Share</span>
-                    </button>
-
-                    {#if post.pet && post.postType === "adopt"}
-                        <button
-                            onclick={() => {
-                                if (!auth.user) {
-                                    window.location.href = "/login";
-                                } else {
-                                    alert("Contact feature coming soon!");
-                                }
-                            }}
-                            class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-full font-medium transition-colors"
-                        >
-                            <Heart class="w-5 h-5" />
-                            Adopt
-                        </button>
-                    {/if}
                 </div>
 
                 <!-- Comments Section -->
-                <div class="p-6">
-                    <h3 class="font-semibold text-gray-900 mb-4">Comments ({post.commentCount ?? 0})</h3>
+                <div bind:this={commentsEl} class="p-4 border-t border-gray-100 dark:border-gray-700" style="opacity: 0;">
+                    <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                        <MessageCircle class="w-5 h-5" />
+                        {$_("common.comments")} ({post.commentCount ?? 0})
+                    </h3>
 
                     <!-- New Comment Form -->
                     {#if auth.user}
                         <div class="flex gap-3 mb-6">
                             <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0 overflow-hidden">
                                 {#if auth.user.profilePicture}
-                                    <img src={auth.user.profilePicture} alt={auth.user.name} class="w-full h-full object-cover" />
+                                    <img src={auth.user.profilePicture} alt={auth.user.fullName} class="w-full h-full object-cover" />
                                 {:else}
-                                    {auth.user.name[0].toUpperCase()}
+                                    {auth.user.firstName?.[0]?.toUpperCase() || '?'}
                                 {/if}
                             </div>
                             <div class="flex-1 flex gap-2">
                                 <input
+                                    id="comment-input"
                                     type="text"
                                     bind:value={newComment}
-                                    placeholder="Write a comment..."
-                                    class="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                    placeholder={$_("common.write_comment")}
+                                    class="flex-1 px-4 py-2.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white dark:focus:bg-gray-600 transition-all"
                                     onkeydown={(e) => e.key === "Enter" && submitComment()}
                                 />
                                 <button
                                     onclick={submitComment}
                                     disabled={!newComment.trim() || submittingComment}
-                                    class="p-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    class="p-2.5 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md hover:shadow-lg"
                                 >
                                     <Send class="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
                     {:else}
-                        <div class="bg-gray-50 rounded-xl p-4 text-center mb-6">
-                            <p class="text-gray-600">
-                                <a href="/login" class="text-indigo-600 font-medium hover:underline">Log in</a> to leave a comment
+                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 text-center mb-6 border border-gray-100 dark:border-gray-600">
+                            <p class="text-gray-600 dark:text-gray-300 text-sm">
+                                <a href="/login" class="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">{$_("common.login_to_comment")}</a> {$_("common.login_to_comment_text")}
                             </p>
                         </div>
                     {/if}
@@ -597,33 +964,50 @@
                         <div class="space-y-4">
                             {#each Array(3) as _}
                                 <div class="flex gap-3 animate-pulse">
-                                    <div class="w-10 h-10 rounded-full bg-gray-200"></div>
+                                    <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700"></div>
                                     <div class="flex-1">
-                                        <div class="h-4 bg-gray-200 rounded w-1/4 mb-2"></div>
-                                        <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                                        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/4 mb-2"></div>
+                                        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
                                     </div>
                                 </div>
                             {/each}
                         </div>
                     {:else if comments.length === 0}
-                        <p class="text-gray-500 text-center py-8">No comments yet. Be the first to comment!</p>
+                        <div class="text-center py-8">
+                            <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3">
+                                <MessageCircle class="w-8 h-8 text-gray-400 dark:text-gray-500" />
+                            </div>
+                            <p class="text-gray-500 dark:text-gray-400 font-medium">{$_("common.no_comments")}</p>
+                            <p class="text-gray-400 dark:text-gray-500 text-sm mt-1">{$_("common.be_first_comment")}</p>
+                        </div>
                     {:else}
                         <div class="space-y-4">
                             {#each comments as comment}
-                                <div class="flex gap-3">
-                                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center text-white font-bold flex-shrink-0 text-sm overflow-hidden">
+                                <div class="flex gap-3 group">
+                                    <a href={`/user/${comment.author.id}`} class="flex-shrink-0">
                                         {#if comment.author.profilePicture}
-                                            <img src={comment.author.profilePicture} alt={comment.author.name} class="w-full h-full object-cover" />
+                                            <img src={comment.author.profilePicture} alt={comment.author.fullName} class="w-10 h-10 rounded-full object-cover" />
                                         {:else}
-                                            {comment.author.name[0].toUpperCase()}
+                                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center text-white font-bold text-sm">
+                                                {comment.author.firstName?.[0]?.toUpperCase() || '?'}
+                                            </div>
                                         {/if}
-                                    </div>
-                                    <div class="flex-1 bg-gray-50 rounded-xl p-3">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <span class="font-semibold text-gray-900 text-sm">{comment.author.name}</span>
-                                            <span class="text-xs text-gray-500">{formatDate(comment.createdAt)}</span>
+                                    </a>
+                                    <div class="flex-1">
+                                        <div class="bg-gray-50 dark:bg-gray-700/50 rounded-2xl px-4 py-3">
+                                            <div class="flex items-center gap-2 mb-1">
+                                                <a href={`/user/${comment.author.id}`} class="font-semibold text-gray-900 dark:text-white text-sm hover:underline">
+                                                    {comment.author.fullName}
+                                                </a>
+                                            </div>
+                                            <p class="text-gray-700 dark:text-gray-300 text-sm">{comment.content}</p>
                                         </div>
-                                        <p class="text-gray-700 text-sm">{comment.content}</p>
+                                        <div class="flex items-center gap-3 mt-1 px-2">
+                                            <span class="text-xs text-gray-500 dark:text-gray-400">{formatRelativeTime(comment.createdAt)}</span>
+                                            <button class="text-xs text-gray-500 dark:text-gray-400 font-medium hover:text-indigo-600 dark:hover:text-indigo-400">
+                                                {$_("common.reply")}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -632,19 +1016,23 @@
                                     <div class="ml-12 space-y-3">
                                         {#each comment.replies as reply}
                                             <div class="flex gap-3">
-                                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center text-white font-bold flex-shrink-0 text-xs overflow-hidden">
+                                                <a href={`/user/${reply.author.id}`} class="flex-shrink-0">
                                                     {#if reply.author.profilePicture}
-                                                        <img src={reply.author.profilePicture} alt={reply.author.name} class="w-full h-full object-cover" />
+                                                        <img src={reply.author.profilePicture} alt={reply.author.fullName} class="w-8 h-8 rounded-full object-cover" />
                                                     {:else}
-                                                        {reply.author.name[0].toUpperCase()}
+                                                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center text-white font-bold text-xs">
+                                                            {reply.author.firstName?.[0]?.toUpperCase() || '?'}
+                                                        </div>
                                                     {/if}
-                                                </div>
-                                                <div class="flex-1 bg-gray-50 rounded-xl p-3">
-                                                    <div class="flex items-center gap-2 mb-1">
-                                                        <span class="font-semibold text-gray-900 text-sm">{reply.author.name}</span>
-                                                        <span class="text-xs text-gray-500">{formatDate(reply.createdAt)}</span>
+                                                </a>
+                                                <div class="flex-1">
+                                                    <div class="bg-gray-50 dark:bg-gray-700/50 rounded-2xl px-4 py-2">
+                                                        <a href={`/user/${reply.author.id}`} class="font-semibold text-gray-900 dark:text-white text-sm hover:underline">
+                                                            {reply.author.fullName}
+                                                        </a>
+                                                        <p class="text-gray-700 dark:text-gray-300 text-sm">{reply.content}</p>
                                                     </div>
-                                                    <p class="text-gray-700 text-sm">{reply.content}</p>
+                                                    <span class="text-xs text-gray-500 dark:text-gray-400 mt-1 px-2 block">{formatRelativeTime(reply.createdAt)}</span>
                                                 </div>
                                             </div>
                                         {/each}
@@ -670,7 +1058,7 @@
     >
         <button
             onclick={closeGallery}
-            class="absolute top-4 right-4 text-white/80 hover:text-white p-2"
+            class="absolute top-4 right-4 text-white/80 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors"
         >
             <X class="w-8 h-8" />
         </button>
@@ -678,14 +1066,14 @@
         {#if allImages.length > 1}
             <button
                 onclick={(e) => { e.stopPropagation(); prevImage(); }}
-                class="absolute left-4 text-white/80 hover:text-white p-2"
+                class="absolute left-4 text-white/80 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors"
             >
                 <ChevronLeft class="w-10 h-10" />
             </button>
 
             <button
                 onclick={(e) => { e.stopPropagation(); nextImage(); }}
-                class="absolute right-4 text-white/80 hover:text-white p-2"
+                class="absolute right-4 text-white/80 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors"
             >
                 <ChevronRight class="w-10 h-10" />
             </button>
@@ -701,14 +1089,49 @@
         />
 
         {#if allImages.length > 1}
-            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 px-3 py-2 rounded-full">
                 {#each allImages as _, i}
                     <button
                         onclick={(e) => { e.stopPropagation(); selectedImageIndex = i; }}
-                        class="w-2 h-2 rounded-full transition-colors {i === selectedImageIndex ? 'bg-white' : 'bg-white/40'}"
+                        class="w-2.5 h-2.5 rounded-full transition-all {i === selectedImageIndex ? 'bg-white scale-110' : 'bg-white/40 hover:bg-white/60'}"
                     ></button>
                 {/each}
             </div>
         {/if}
     </div>
+{/if}
+
+<!-- Report Post Modal -->
+{#if post}
+    <ReportPostModal
+        bind:open={showReportModal}
+        postId={post.id}
+        onClose={() => showReportModal = false}
+    />
+
+    <!-- Edit Post Modal -->
+    <EditPostModal
+        bind:open={showEditModal}
+        {post}
+        onClose={() => showEditModal = false}
+        onPostUpdated={(updatedPost) => {
+            showEditModal = false;
+            // Update post data locally
+            if (updatedPost) {
+                post = { ...post, ...updatedPost };
+            }
+        }}
+    />
+
+    <!-- Delete Post Modal -->
+    <DeletePostModal
+        bind:open={showDeleteModal}
+        {post}
+        onClose={() => showDeleteModal = false}
+        onPostDeleted={() => {
+            showDeleteModal = false;
+            // Navigate back to feed
+            goto('/');
+        }}
+    />
 {/if}

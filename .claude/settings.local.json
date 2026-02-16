@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(docker compose:*)",
-      "Bash(copy:*)"
+      "Bash(copy:*)",
+      "WebFetch(domain:eventoor.com)",
+      "Bash(bun add:*)",
+      "Bash(ping:*)",
+      "Bash(bun run check:*)",
+      "Bash(npx svelte-check:*)",
+      "Bash(docker-compose:*)"
     ]
   }
 }

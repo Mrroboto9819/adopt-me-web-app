@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { MONGO_URI } from '$env/static/private';
 
-import { seedBreeds } from './seed';
+import { seedBreeds, seedCountries } from './seed';
 
 export const connectDB = async () => {
     if (mongoose.connection.readyState >= 1) {
@@ -16,6 +16,7 @@ export const connectDB = async () => {
         await mongoose.connect(MONGO_URI);
         console.log('MongoDB Connected');
         await seedBreeds();
+        await seedCountries();
     } catch (error) {
         console.error('MongoDB Connection Error:', error);
     }

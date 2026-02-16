@@ -2,9 +2,29 @@ import { browser } from '$app/environment';
 
 interface User {
     id?: string;
-    name: string;
+    firstName: string;
+    lastName: string;
+    secondLastName?: string;
+    fullName: string;
     email: string;
     profilePicture?: string;
+    language?: string;
+    theme?: 'light' | 'dark' | 'system';
+    coverImage?: string;
+    coverImageOffset?: { x: number; y: number };
+    timezone?: string;
+    phone?: string;
+    phoneCountryCode?: string;
+    phoneVerified?: boolean;
+    emailVerified?: boolean;
+    notifications?: {
+        email?: boolean;
+        push?: boolean;
+        sms?: boolean;
+        newMessages?: boolean;
+        adoptionUpdates?: boolean;
+        newsletter?: boolean;
+    };
 }
 
 class AuthStore {
@@ -59,6 +79,19 @@ class AuthStore {
         if (browser) {
             localStorage.removeItem('auth_token');
             localStorage.removeItem('auth_user');
+        }
+    }
+
+    updateUser(patch: Partial<User>) {
+        if (!this.#user) return;
+
+        this.#user = {
+            ...this.#user,
+            ...patch
+        };
+
+        if (browser) {
+            localStorage.setItem('auth_user', JSON.stringify(this.#user));
         }
     }
 }
