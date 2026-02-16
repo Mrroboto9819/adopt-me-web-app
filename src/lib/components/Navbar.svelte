@@ -23,10 +23,65 @@
     let menuItemsEl: HTMLDivElement | null = $state(null);
     let desktopDropdownEl: HTMLDivElement | null = $state(null);
 
-    // Verification status checks - remind users to add/verify both email and phone
+    // Verification status checks - only email verification required
     let needsEmailVerification = $derived(auth.user && (!auth.user.email || !auth.user.emailVerified));
-    let needsPhoneVerification = $derived(auth.user && (!auth.user.phone || !auth.user.phoneVerified));
-    let showVerificationBanner = $derived(needsEmailVerification || needsPhoneVerification);
+    let showVerificationBanner = $derived(needsEmailVerification);
+
+    // Support banner state - closable with 25% chance to reappear after 20 navigations
+    let showSupportBanner = $state(true);
+    let navigationCount = $state(0);
+    const NAVIGATIONS_BEFORE_RETRY = 20;
+    const RESHOW_CHANCE = 0.25; // 25%
+
+    // Initialize support banner state from localStorage
+    onMount(() => {
+        const stored = localStorage.getItem('support_banner_state');
+        if (stored) {
+            try {
+                const data = JSON.parse(stored);
+                showSupportBanner = data.show ?? true;
+                navigationCount = data.navCount ?? 0;
+            } catch {
+                // Invalid data, use defaults
+            }
+        }
+    });
+
+    // Track page navigations for support banner logic
+    let lastPathname = $state('');
+    $effect(() => {
+        const currentPath = $page.url.pathname;
+        if (lastPathname && lastPathname !== currentPath) {
+            // Navigation occurred
+            if (!showSupportBanner) {
+                navigationCount++;
+
+                // After 20 navigations, 25% chance to show again
+                if (navigationCount >= NAVIGATIONS_BEFORE_RETRY) {
+                    if (Math.random() < RESHOW_CHANCE) {
+                        showSupportBanner = true;
+                        navigationCount = 0;
+                    }
+                }
+
+                // Save state
+                localStorage.setItem('support_banner_state', JSON.stringify({
+                    show: showSupportBanner,
+                    navCount: navigationCount
+                }));
+            }
+        }
+        lastPathname = currentPath;
+    });
+
+    function closeSupportBanner() {
+        showSupportBanner = false;
+        navigationCount = 0;
+        localStorage.setItem('support_banner_state', JSON.stringify({
+            show: false,
+            navCount: 0
+        }));
+    }
 
     // Sync search query with URL parameter (only when URL changes externally)
     let lastUrlSearch = $state<string | null>(null);
@@ -556,20 +611,10 @@
                         <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                     </span>
                     <span class="text-xs text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
-                        {#if needsEmailVerification && needsPhoneVerification}
-                            {$t("nav.add_verify_contacts")}
-                        {:else if needsEmailVerification}
-                            {#if !auth.user?.email}
-                                {$t("nav.add_email")}
-                            {:else}
-                                {$t("nav.verify_email")}
-                            {/if}
+                        {#if !auth.user?.email}
+                            {$t("nav.add_email")}
                         {:else}
-                            {#if !auth.user?.phone}
-                                {$t("nav.add_phone")}
-                            {:else}
-                                {$t("nav.verify_phone")}
-                            {/if}
+                            {$t("nav.verify_email")}
                         {/if}
                     </span>
                     <span class="text-xs font-medium text-indigo-600 dark:text-indigo-400 group-hover:underline">
@@ -581,21 +626,31 @@
     {/if}
 
     <!-- Support Us Banner -->
-    <div class="bg-gradient-to-r from-yellow-400/95 to-orange-500/95 backdrop-blur-sm border-b border-orange-300 dark:border-orange-600">
-        <div class="max-w-7xl mx-auto px-4 py-1.5">
-            <a
-                href="/support"
-                class="flex items-center justify-center gap-3 group"
-            >
-                <span class="text-white text-xs font-medium">
-                    ☕ {$t("nav.support_message")}
-                </span>
-                <span class="text-xs font-bold text-white/90 group-hover:text-white transition-colors underline underline-offset-2">
-                    {$t("nav.buy_coffee")}
-                </span>
-            </a>
+    {#if showSupportBanner}
+        <div class="bg-gradient-to-r from-yellow-400/95 to-orange-500/95 backdrop-blur-sm border-b border-orange-300 dark:border-orange-600">
+            <div class="max-w-7xl mx-auto px-4 py-1.5 flex items-center justify-center">
+                <a
+                    href="/support"
+                    class="flex items-center justify-center gap-3 group flex-1"
+                >
+                    <span class="text-white text-xs font-medium">
+                        ☕ {$t("nav.support_message")}
+                    </span>
+                    <span class="text-xs font-bold text-white/90 group-hover:text-white transition-colors underline underline-offset-2">
+                        {$t("nav.buy_coffee")}
+                    </span>
+                </a>
+                <button
+                    type="button"
+                    onclick={closeSupportBanner}
+                    class="ml-2 p-1 text-white/70 hover:text-white hover:bg-white/20 rounded-full transition-colors"
+                    aria-label="Close banner"
+                >
+                    <X class="w-3.5 h-3.5" />
+                </button>
+            </div>
         </div>
-    </div>
+    {/if}
 </div>
 
 <!-- Mobile Offcanvas Menu -->
@@ -781,5 +836,5 @@
 {/if}
 
 <!-- Spacer to prevent content overlap -->
-<!-- Nav (64px) + Support banner (28px) + Verification banner if shown (28px) -->
-<div class="{showVerificationBanner ? 'h-[120px]' : 'h-[92px]'}"></div>
+<!-- Nav (64px) + Support banner if shown (28px) + Verification banner if shown (28px) -->
+<div class="{showVerificationBanner && showSupportBanner ? 'h-[120px]' : (showVerificationBanner || showSupportBanner) ? 'h-[92px]' : 'h-16'}"></div>
