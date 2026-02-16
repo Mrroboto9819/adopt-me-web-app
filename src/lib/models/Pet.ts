@@ -5,44 +5,74 @@ import type { IBase } from './base';
 export interface IPet extends IBase {
     _id: string;
     name: string;
-    species?: mongoose.Types.ObjectId | string; // Standard Linked Species (or populated object)
-    customSpecies?: string; // Manual Entry
-    breed?: mongoose.Types.ObjectId | string; // Standard Linked Breed
-    customBreed?: string; // Manual Entry
+    species?: mongoose.Types.ObjectId | string;
+    customSpecies?: string;
+    breed?: mongoose.Types.ObjectId | string;
+    customBreed?: string;
     age?: number;
-    gender: 'Male' | 'Female' | 'Unknown';
-    size: 'Small' | 'Medium' | 'Large';
+    gender: 'male' | 'female' | 'unknown';
+    size: 'small' | 'medium' | 'large';
     color?: string;
+    weight?: number;
+    weightUnit?: 'kg' | 'lb';
     coverImage?: string;
     images: string[];
     description?: string;
-    status: 'Available' | 'Pending' | 'Adopted';
+    status: 'available' | 'pending' | 'adopted' | 'not_for_adoption';
+    // Personality & Compatibility
+    energyLevel?: 'low' | 'medium' | 'high';
+    temperament?: string[];
+    goodWithKids?: boolean;
+    goodWithDogs?: boolean;
+    goodWithCats?: boolean;
+    houseTrained?: boolean;
+    trainingLevel?: 'none' | 'basic' | 'advanced';
+    // Health
     health?: {
         vaccinated: boolean;
         neutered: boolean;
+        microchipped: boolean;
     };
-    owner?: mongoose.Schema.Types.ObjectId; // User who listed the pet
+    specialNeeds?: string;
+    // Adoption
+    adoptionFee?: number;
+    owner?: mongoose.Schema.Types.ObjectId;
 }
 
 const petSchema = new mongoose.Schema<IPet>({
     ...baseSchemaFields,
     name: { type: String, required: true },
-    species: { type: mongoose.Schema.Types.ObjectId, ref: 'Species', required: false }, // Link to standard species
-    customSpecies: { type: String, required: false }, // For manual entry "Other"
-    breed: { type: mongoose.Schema.Types.ObjectId, ref: 'Breed', required: false }, // Link to standard breed
-    customBreed: { type: String, required: false }, // For manual entry "Mixed/Other"
+    species: { type: mongoose.Schema.Types.ObjectId, ref: 'Species', required: false },
+    customSpecies: { type: String, required: false },
+    breed: { type: mongoose.Schema.Types.ObjectId, ref: 'Breed', required: false },
+    customBreed: { type: String, required: false },
     age: { type: Number },
-    gender: { type: String, enum: ['Male', 'Female', 'Unknown'], default: 'Unknown' },
-    size: { type: String, enum: ['Small', 'Medium', 'Large'], default: 'Medium' },
+    gender: { type: String, enum: ['male', 'female', 'unknown'], default: 'unknown' },
+    size: { type: String, enum: ['small', 'medium', 'large'], default: 'medium' },
     color: { type: String },
-    coverImage: { type: String }, // Main/Cover image URL
-    images: [{ type: String }],   // Gallery URLs
+    weight: { type: Number },
+    weightUnit: { type: String, enum: ['kg', 'lb'], default: 'kg' },
+    coverImage: { type: String },
+    images: [{ type: String }],
     description: { type: String },
-    status: { type: String, enum: ['Available', 'Pending', 'Adopted'], default: 'Available' },
+    status: { type: String, enum: ['available', 'pending', 'adopted', 'not_for_adoption'], default: 'available' },
+    // Personality & Compatibility
+    energyLevel: { type: String, enum: ['low', 'medium', 'high'] },
+    temperament: [{ type: String }],
+    goodWithKids: { type: Boolean },
+    goodWithDogs: { type: Boolean },
+    goodWithCats: { type: Boolean },
+    houseTrained: { type: Boolean },
+    trainingLevel: { type: String, enum: ['none', 'basic', 'advanced'] },
+    // Health
     health: {
         vaccinated: { type: Boolean, default: false },
         neutered: { type: Boolean, default: false },
+        microchipped: { type: Boolean, default: false },
     },
+    specialNeeds: { type: String },
+    // Adoption
+    adoptionFee: { type: Number },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, baseSchemaOptions);
 

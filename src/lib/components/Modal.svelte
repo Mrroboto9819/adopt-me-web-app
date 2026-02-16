@@ -1,12 +1,135 @@
 <script lang="ts">
-    import { fade, scale } from "svelte/transition";
-    import { quintOut } from "svelte/easing";
     import { X } from "lucide-svelte";
+    import { type Snippet } from "svelte";
+    import gsap from "gsap";
 
-    let { open, title, onClose, children } = $props();
+    let {
+        open = $bindable(),
+        title,
+        onClose,
+        children,
+        footer,
+    }: {
+        open: boolean;
+        title?: string;
+        onClose: () => void;
+        children: Snippet;
+        footer?: Snippet;
+    } = $props();
+
+    // Element refs for GSAP animations
+    let backdropEl: HTMLButtonElement | null = $state(null);
+    let modalPanelEl: HTMLDivElement | null = $state(null);
+    let modalContentEl: HTMLDivElement | null = $state(null);
+
+    // Internal visibility state for animation control
+    let isVisible = $state(false);
+    let isAnimating = $state(false);
+
+    // Watch for open prop changes
+    $effect(() => {
+        if (open && !isVisible && !isAnimating) {
+            openModal();
+        } else if (!open && isVisible && !isAnimating) {
+            closeModal();
+        }
+    });
+
+    function openModal() {
+        // Lock body scroll before showing modal
+        document.body.style.overflow = "hidden";
+        isVisible = true;
+        isAnimating = true;
+
+        requestAnimationFrame(() => {
+            const tl = gsap.timeline({
+                onComplete: () => {
+                    isAnimating = false;
+                },
+            });
+
+            // Backdrop fade in
+            if (backdropEl) {
+                tl.fromTo(
+                    backdropEl,
+                    { opacity: 0 },
+                    { opacity: 1, duration: 0.25, ease: "power2.out" },
+                    0
+                );
+            }
+
+            // Modal panel scale and fade in
+            if (modalPanelEl) {
+                tl.fromTo(
+                    modalPanelEl,
+                    { opacity: 0, scale: 0.95, y: 20 },
+                    { opacity: 1, scale: 1, y: 0, duration: 0.35, ease: "power3.out" },
+                    0.1
+                );
+            }
+
+            // Content items stagger animation
+            if (modalContentEl) {
+                const contentItems = modalContentEl.querySelectorAll(".modal-animate-item");
+                if (contentItems.length > 0) {
+                    tl.fromTo(
+                        contentItems,
+                        { opacity: 0, y: 10 },
+                        { opacity: 1, y: 0, duration: 0.25, stagger: 0.05, ease: "power2.out" },
+                        0.2
+                    );
+                }
+            }
+        });
+    }
+
+    function closeModal() {
+        isAnimating = true;
+
+        const tl = gsap.timeline({
+            onComplete: () => {
+                isVisible = false;
+                isAnimating = false;
+                document.body.style.overflow = "";
+            },
+        });
+
+        // Modal panel scale and fade out
+        if (modalPanelEl) {
+            tl.to(
+                modalPanelEl,
+                { opacity: 0, scale: 0.95, y: 10, duration: 0.2, ease: "power2.in" },
+                0
+            );
+        }
+
+        // Backdrop fade out
+        if (backdropEl) {
+            tl.to(
+                backdropEl,
+                { opacity: 0, duration: 0.2, ease: "power2.in" },
+                0.05
+            );
+        }
+    }
+
+    function handleClose() {
+        if (isAnimating) return;
+        // Call onClose immediately to set open = false
+        // The $effect will then trigger closeModal()
+        onClose();
+    }
+
+    function handleKeydown(e: KeyboardEvent) {
+        if (e.key === "Escape" && isVisible && !isAnimating) {
+            handleClose();
+        }
+    }
 </script>
 
-{#if open}
+<svelte:window onkeydown={handleKeydown} />
+
+{#if isVisible}
     <div
         class="fixed inset-0 z-50 overflow-y-auto"
         aria-labelledby="modal-title"
@@ -14,45 +137,31 @@
         aria-modal="true"
     >
         <div
-            class="flex items-center justify-center min-h-screen px-4 pb-20 text-center sm:block sm:p-0"
+            class="flex items-center justify-center min-h-screen px-4 p-4 text-center"
         >
-            <!-- 
-                Background overlay 
-                Using `fade` for smooth appearance.
-            -->
-            <div
-                class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity"
-                aria-hidden="true"
-                onclick={onClose}
-                transition:fade={{ duration: 200 }}
-            ></div>
+            <!-- Background overlay (separate for GSAP animation) -->
+            <button
+                bind:this={backdropEl}
+                type="button"
+                class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm cursor-default"
+                style="opacity: 0;"
+                aria-label="Close modal"
+                onclick={handleClose}
+            ></button>
 
-            <!-- This element is to trick the browser into centering the modal contents. -->
-            <span
-                class="hidden sm:inline-block sm:align-middle sm:h-screen"
-                aria-hidden="true">&#8203;</span
-            >
-
-            <!-- 
-                Modal panel 
-                Using `scale` combined with `fade` (implicitly via opacity in scale) for a "pop" effect.
-            -->
+            <!-- Modal panel (separate for GSAP animation) -->
             <div
-                class="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full"
-                transition:scale={{
-                    duration: 300,
-                    opacity: 0,
-                    start: 0.95,
-                    easing: quintOut,
-                }}
+                bind:this={modalPanelEl}
+                class="relative bg-white dark:bg-gray-800 rounded-2xl text-left shadow-2xl sm:my-8 sm:max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden"
+                style="opacity: 0;"
             >
-                <!-- Header -->
+                <!-- Header (fixed) -->
                 <div
-                    class="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50/50"
+                    class="flex justify-between items-center px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/50 flex-shrink-0"
                 >
                     {#if title}
                         <h3
-                            class="text-lg font-bold text-gray-900"
+                            class="text-lg font-bold text-gray-900 dark:text-white"
                             id="modal-title"
                         >
                             {title}
@@ -61,18 +170,27 @@
                         <div></div>
                     {/if}
                     <button
-                        onclick={onClose}
-                        class="text-gray-400 hover:text-gray-500 hover:bg-gray-100 p-1 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        onclick={handleClose}
+                        class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         aria-label="Close modal"
                     >
                         <X class="w-5 h-5" />
                     </button>
                 </div>
 
-                <!-- Body -->
-                <div class="px-6 py-6">
+                <!-- Body (scrollable) -->
+                <div bind:this={modalContentEl} class="px-6 py-6 overflow-y-auto flex-1">
                     {@render children()}
                 </div>
+
+                <!-- Footer (fixed) -->
+                {#if footer}
+                    <div
+                        class="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/50 flex-shrink-0"
+                    >
+                        {@render footer()}
+                    </div>
+                {/if}
             </div>
         </div>
     </div>

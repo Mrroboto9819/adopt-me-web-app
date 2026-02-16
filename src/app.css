@@ -1,1 +1,4 @@
 @import "tailwindcss";
+
+/* Use class-based dark mode so theme.setTheme() can switch instantly */
+@custom-variant dark (&:where(.dark, .dark *));

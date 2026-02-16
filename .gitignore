@@ -54,6 +54,9 @@ docker-compose.prod.yml
 .gemini
 .cortex
 .history
+.claude
+.claude/
+.cursor
 
 # Uploads
 /static/uploads
