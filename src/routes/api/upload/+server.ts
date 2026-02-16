@@ -46,11 +46,14 @@ export async function POST({ request }) {
     const uploadedUrls: string[] = [];
     const timestamp = Date.now();
 
-    // 4. Create Directory structure: static/uploads/<userId>/<timestamp>/
+    // 4. Create Directory structure: build/client/uploads/<userId>/<timestamp>/
     // Using simple timestamp to group this batch.
-    // Note: In SvelteKit `static` assets are served from root `/`. 
-    // We physically write to `static/uploads...` in the project dir.
-    const uploadDir = path.join(process.cwd(), 'static', 'uploads', userId, timestamp.toString());
+    // Note: In production with adapter-node, static assets are served from build/client
+    // In development, they're served from static/
+    const isProduction = process.env.NODE_ENV === 'production';
+    const uploadDir = isProduction
+        ? path.join(process.cwd(), 'build', 'client', 'uploads', userId, timestamp.toString())
+        : path.join(process.cwd(), 'static', 'uploads', userId, timestamp.toString());
 
     if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });

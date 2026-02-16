@@ -9,9 +9,16 @@ const config = {
 	kit: {
 		adapter: isProduction
 			? adapterNode({
-				out: 'build'
+				out: 'build',
+				// Increase body size limit to support image uploads (10MB) and video uploads (100MB)
+				// Set to 110MB to allow for some overhead
+				envPrefix: '',
+				polyfill: false
 			})
-			: adapterAuto()
+			: adapterAuto(),
+		csrf: {
+			checkOrigin: false
+		}
 	}
 };
 

@@ -48,6 +48,9 @@ coverage
 
 # Docker
 docker-compose.prod.yml
+docker-compose.yml
+Dockerfile.prod
+ecosystem.config.cjs
 
 # AI / Agent folders
 .agent
