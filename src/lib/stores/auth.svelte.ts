@@ -27,6 +27,9 @@ interface User {
     };
 }
 
+// Admin email for dev/admin features
+const ADMIN_EMAIL = "pablo.cabrera.castrejon@gmail.com";
+
 class AuthStore {
     // Internal state
     #token = $state('');
@@ -59,6 +62,10 @@ class AuthStore {
 
     get isAuthenticated() {
         return !!this.#token;
+    }
+
+    get isAdmin() {
+        return this.#user?.email === ADMIN_EMAIL;
     }
 
     // Actions
