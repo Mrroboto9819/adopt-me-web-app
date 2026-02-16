@@ -8,7 +8,11 @@ import { fileURLToPath } from 'url';
 // Get the directory of this module for template paths
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const TEMPLATES_DIR = join(__dirname, '..', 'templates', 'email');
+// In production, templates are copied to /app/templates, in dev they're in src/lib/templates
+const isProduction = process.env.NODE_ENV === 'production';
+const TEMPLATES_DIR = isProduction
+    ? join(process.cwd(), 'templates', 'email')
+    : join(__dirname, '..', 'templates', 'email');
 
 // Email provider configuration
 // Set EMAIL_PROVIDER to 'mailgun' or 'sendgrid' in .env
