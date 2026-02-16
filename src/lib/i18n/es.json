@@ -1020,6 +1020,14 @@
         "reset_link": "Enlace de Restablecimiento",
         "go_to_reset": "Ir a Restablecer Contraseña"
     },
+    "error": {
+        "page_not_found": "Página No Encontrada",
+        "page_not_found_desc": "La página que buscas no existe o ha sido movida.",
+        "something_wrong": "Algo Salió Mal",
+        "generic_desc": "Ocurrió un error inesperado. Por favor intenta de nuevo más tarde.",
+        "go_back": "Volver",
+        "go_home": "Ir al Inicio"
+    },
     "reset_password": {
         "seo_title": "Restablecer Contraseña - AdoptMe",
         "seo_desc": "Crea una nueva contraseña para tu cuenta de AdoptMe.",

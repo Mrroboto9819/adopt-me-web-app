@@ -356,3 +356,30 @@ export async function sendPasswordResetEmail(
         html,
     });
 }
+
+/**
+ * Send beta invite email
+ */
+export async function sendBetaInviteEmail(
+    email: string,
+    name: string,
+    language: 'en' | 'es' = 'en'
+): Promise<boolean> {
+    const templateName = language === 'es' ? 'beta-invite-es' : 'beta-invite';
+    const subject = language === 'es'
+        ? "🐾 ¡Estás Invitado a Probar AdoptMe!"
+        : "🐾 You're Invited to Test AdoptMe!";
+
+    const html = renderTemplate(templateName, {
+        NAME: name,
+        APP_URL: APP_URL,
+    });
+
+    console.log(`[Email] Sending beta invite to ${email} (${name}) in ${language}`);
+
+    return sendEmail({
+        to: email,
+        subject,
+        html,
+    });
+}

@@ -2313,7 +2313,44 @@ const resolvers = {
       if (parent.author && typeof parent.author === 'object' && '_id' in parent.author) {
         return parent.author;
       }
-      return await User.findById(parent.author);
+      const user = await User.findById(parent.author);
+      if (!user) {
+        // Return a placeholder for deleted users
+        const deletedUserId = parent.author?.toString() || 'deleted';
+        return {
+          _id: deletedUserId,
+          id: deletedUserId,
+          email: 'deleted@user.com',
+          firstName: 'Deleted',
+          lastName: 'User',
+          secondLastName: null,
+          fullName: 'Deleted User',
+          role: 'user',
+          isActive: false,
+          isBanned: false,
+          banReason: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          profilePicture: null,
+          coverImage: null,
+          coverImageOffset: null,
+          address: null,
+          timezone: null,
+          language: 'en',
+          phone: null,
+          phoneCountryCode: null,
+          phoneVerified: false,
+          emailVerified: false,
+          theme: 'system',
+          notifications: null,
+          preferredSpecies: [],
+          warnings: [],
+          warningCount: 0,
+          savedPosts: [],
+          likedPosts: [],
+        };
+      }
+      return user;
     },
     pet: async (parent: IPost) => {
       if (!parent.pet) return null;
@@ -2409,6 +2446,12 @@ const resolvers = {
     }
   },
   User: {
+    // Ensure id is properly resolved for both MongoDB documents and plain objects
+    id: (parent: any) => {
+      if (parent.id) return parent.id;
+      if (parent._id) return parent._id.toString ? parent._id.toString() : parent._id;
+      return null;
+    },
     fullName: (parent: IUser) => {
       const parts = [parent.firstName, parent.lastName];
       if (parent.secondLastName) parts.push(parent.secondLastName);
@@ -2467,7 +2510,44 @@ const resolvers = {
       if (parent.author && typeof parent.author === 'object' && '_id' in parent.author) {
         return parent.author;
       }
-      return await User.findById(parent.author);
+      const user = await User.findById(parent.author);
+      if (!user) {
+        // Return a placeholder for deleted users
+        const deletedUserId = parent.author?.toString() || 'deleted';
+        return {
+          _id: deletedUserId,
+          id: deletedUserId,
+          email: 'deleted@user.com',
+          firstName: 'Deleted',
+          lastName: 'User',
+          secondLastName: null,
+          fullName: 'Deleted User',
+          role: 'user',
+          isActive: false,
+          isBanned: false,
+          banReason: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          profilePicture: null,
+          coverImage: null,
+          coverImageOffset: null,
+          address: null,
+          timezone: null,
+          language: 'en',
+          phone: null,
+          phoneCountryCode: null,
+          phoneVerified: false,
+          emailVerified: false,
+          theme: 'system',
+          notifications: null,
+          preferredSpecies: [],
+          warnings: [],
+          warningCount: 0,
+          savedPosts: [],
+          likedPosts: [],
+        };
+      }
+      return user;
     },
     post: async (parent: any) => {
       if (parent.post && typeof parent.post === 'object' && '_id' in parent.post) {

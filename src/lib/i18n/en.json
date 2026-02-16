@@ -1020,6 +1020,14 @@
         "reset_link": "Reset Link",
         "go_to_reset": "Go to Reset Password"
     },
+    "error": {
+        "page_not_found": "Page Not Found",
+        "page_not_found_desc": "The page you're looking for doesn't exist or has been moved.",
+        "something_wrong": "Something Went Wrong",
+        "generic_desc": "An unexpected error occurred. Please try again later.",
+        "go_back": "Go Back",
+        "go_home": "Go Home"
+    },
     "reset_password": {
         "seo_title": "Reset Password - AdoptMe",
         "seo_desc": "Create a new password for your AdoptMe account.",

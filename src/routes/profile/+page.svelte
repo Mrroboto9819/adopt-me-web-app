@@ -1121,6 +1121,12 @@
     }
 
     onMount(async () => {
+        // Redirect to login if not authenticated
+        if (!auth.isAuthenticated) {
+            goto("/login");
+            return;
+        }
+
         await Promise.all([fetchMyPets(), fetchCountries()]);
 
         // Run entrance animations after data loads
@@ -1322,15 +1328,21 @@
     }
 </script>
 
-<SEO
-    title={$_("profile.seo_title")}
-    description={$_("profile.seo_desc")}
-    noindex={true}
-/>
-
-{#if initialLoading}
-    <ProfileSkeleton />
+{#if !auth.isAuthenticated}
+    <!-- Redirecting to login... -->
+    <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+    </div>
 {:else}
+    <SEO
+        title={$_("profile.seo_title")}
+        description={$_("profile.seo_desc")}
+        noindex={true}
+    />
+
+    {#if initialLoading}
+        <ProfileSkeleton />
+    {:else}
     <div
         class="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 transition-colors"
     >
@@ -3679,6 +3691,7 @@
         selectedPost = null;
     }}
 />
+{/if}
 
 <style>
     /* Hide scrollbar for tabs navigation */
