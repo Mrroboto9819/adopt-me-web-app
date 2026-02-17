@@ -19,7 +19,7 @@ jobs:
           script: |
             set -e
 
-            cd /opt/webapps/apps/portafolio-2026
+            cd /opt/webapps/apps/adopt-me-web-app
 
             echo "Pulling latest code..."
             git fetch origin main
@@ -29,10 +29,10 @@ jobs:
             git pull origin main
 
             echo "Building containers..."
-            docker compose -f docker-compose.prod.yml build
+            docker compose -f docker-compose.yml build
 
             echo "Restarting containers..."
-            docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.yml up -d
 
             echo "Cleaning unused images..."
             docker image prune -f
