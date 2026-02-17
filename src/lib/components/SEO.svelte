@@ -17,9 +17,9 @@
 
 	let {
 		title = 'AdoptMe - Find Your Perfect Pet Companion',
-		description = 'AdoptMe is the leading pet adoption platform connecting loving families with pets in need. Browse dogs, cats, rabbits, and more from local shelters and rescues.',
-		keywords = 'pet adoption, adopt a pet, dog adoption, cat adoption, animal rescue, pet shelter, adopt dogs, adopt cats, pet finder, animal adoption',
-		image = '/og-image.jpg',
+		description = 'Give a pet a second chance at happiness. AdoptMe helps you discover dogs, cats, and other animals waiting for their forever home. Post adoptions, report lost pets, and connect with a community that cares.',
+		keywords = 'pet adoption, adopt a pet, dog adoption, cat adoption, animal rescue, pet shelter, adopt dogs, adopt cats, pet finder, animal adoption, lost pets, found pets, pet community',
+		image = 'https://www.hartz.com/wp-content/uploads/2021/10/adopt-dog-1.jpg',
 		url = '',
 		type = 'website',
 		siteName = 'AdoptMe',
