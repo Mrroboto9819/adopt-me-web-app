@@ -66,7 +66,7 @@
     let reopenAfterPet = $state(false);
 
     // Media constraints
-    const MAX_IMAGES = 4;
+    const MAX_IMAGES = 3;
     const MAX_VIDEO_SIZE_MB = 100;
     const MAX_VIDEO_DURATION_MINUTES = 5;
 

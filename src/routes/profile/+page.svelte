@@ -122,16 +122,30 @@
     let selectedCountry = $state<any>(null);
     let loadingCountries = $state(false);
 
-    // Verification banner visibility (sync with Navbar) - remind users to add/verify both
+    // Verification banner visibility (sync with Navbar) - only email verification shows banner
     let needsEmailVerification = $derived(
         auth.user && (!auth.user.email || !auth.user.emailVerified),
     );
-    let needsPhoneVerification = $derived(
-        auth.user && (!auth.user.phone || !auth.user.phoneVerified),
-    );
-    let showVerificationBanner = $derived(
-        needsEmailVerification || needsPhoneVerification,
-    );
+    // Note: showVerificationBanner should match Navbar logic (email only)
+    let showVerificationBanner = $derived(needsEmailVerification);
+
+    // Support banner state (synced with Navbar via localStorage)
+    let showSupportBanner = $state(true);
+
+    // Initialize support banner state from localStorage on mount
+    $effect(() => {
+        if (typeof window !== 'undefined') {
+            const stored = localStorage.getItem('support_banner_state');
+            if (stored) {
+                try {
+                    const state = JSON.parse(stored);
+                    showSupportBanner = state.show ?? true;
+                } catch {
+                    showSupportBanner = true;
+                }
+            }
+        }
+    });
 
     // Handle URL query params for tab
     $effect(() => {
@@ -1647,11 +1661,13 @@
             bind:this={tabsContainer}
         >
             <!-- Tabs Navigation -->
-            <!-- Position: Nav (64px) + Support banner (28px) + Verification banner if shown (28px) -->
+            <!-- Position: Nav (64px) + Support banner if shown (28px) + Verification banner if shown (28px) -->
             <div
-                class="sticky z-10 bg-gray-50 dark:bg-gray-900 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-2 pb-0 mb-8 border-b border-gray-200 dark:border-gray-700 {showVerificationBanner
+                class="sticky z-10 bg-gray-50 dark:bg-gray-900 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-2 pb-0 mb-8 border-b border-gray-200 dark:border-gray-700 {showVerificationBanner && showSupportBanner
                     ? 'top-[120px]'
-                    : 'top-[92px]'}"
+                    : showVerificationBanner || showSupportBanner
+                      ? 'top-[92px]'
+                      : 'top-16'}"
                 style="opacity: 0;"
                 bind:this={tabsNavEl}
             >
