@@ -98,7 +98,7 @@
 		<span
 			class="text-xs font-medium text-gray-400 dark:text-gray-600 select-none"
 		>
-			v0.1.0 Open Alpha
+			v1.0.0 Open Alpha
 		</span>
 	</div>
 
