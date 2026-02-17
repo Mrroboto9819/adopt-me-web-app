@@ -224,28 +224,27 @@
 
         <!-- Author Info -->
         <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                <a
-                    href={post.author ? `/user/${post.author.id}` : '#'}
-                    onclick={(e) => e.stopPropagation()}
-                    class="font-semibold text-sm sm:text-base text-gray-900 dark:text-white hover:underline truncate max-w-[140px] sm:max-w-none flex items-center gap-1"
-                >
-                    {post.author?.fullName || $_("post_card.unknown")}
-                    {#if post.author?.emailVerified || post.author?.phoneVerified}
-                        <span title={$_("common.verified")}>
-                            <BadgeCheck class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500 flex-shrink-0" />
-                        </span>
-                    {/if}
-                </a>
+            <a
+                href={post.author ? `/user/${post.author.id}` : '#'}
+                onclick={(e) => e.stopPropagation()}
+                class="font-semibold text-sm sm:text-base text-gray-900 dark:text-white hover:underline truncate flex items-center gap-1 max-w-fit"
+            >
+                <span class="truncate">{post.author?.fullName || $_("post_card.unknown")}</span>
+                {#if post.author?.emailVerified || post.author?.phoneVerified}
+                    <span title={$_("common.verified")} class="flex-shrink-0">
+                        <BadgeCheck class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" />
+                    </span>
+                {/if}
+            </a>
+            <div class="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 <span class="{postTypeBadge.class} text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap">
                     {postTypeBadge.label}
                 </span>
-            </div>
-            <div class="flex items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <span>•</span>
                 <span>{formatRelativeTime(post.createdAt)}</span>
                 {#if post.location}
                     <span>•</span>
-                    <span class="flex items-center gap-0.5 truncate max-w-[120px] sm:max-w-none">
+                    <span class="flex items-center gap-0.5 truncate max-w-[100px] sm:max-w-none">
                         <MapPin class="w-3 h-3 flex-shrink-0" />
                         <span class="truncate">{post.location}</span>
                     </span>

@@ -1,15 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { verifyToken } from '$lib/auth';
+import { getUploadsBaseDir } from '$lib/upload-utils';
 import fs from 'fs';
 import path from 'path';
-
-// Get the base uploads directory based on environment
-function getUploadsBaseDir(): string {
-    const isProduction = process.env.NODE_ENV === 'production';
-    return isProduction
-        ? path.join(process.cwd(), 'build', 'client', 'uploads')
-        : path.join(process.cwd(), 'static', 'uploads');
-}
 
 export async function POST({ request }) {
     // 1. Authenticate Request

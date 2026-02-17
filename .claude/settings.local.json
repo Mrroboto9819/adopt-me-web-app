@@ -8,7 +8,8 @@
       "Bash(ping:*)",
       "Bash(bun run check:*)",
       "Bash(npx svelte-check:*)",
-      "Bash(docker-compose:*)"
+      "Bash(docker-compose:*)",
+      "Bash(bun install:*)"
     ]
   }
 }

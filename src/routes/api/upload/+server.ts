@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { verifyToken } from '$lib/auth';
+import { getUploadsBaseDir } from '$lib/upload-utils';
 import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
@@ -13,14 +14,6 @@ const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.t
 const MAX_IMAGE_DIMENSION = 2048; // Max width or height in pixels
 const JPEG_QUALITY = 80; // Quality for JPEG/WebP output
 const PNG_COMPRESSION = 8; // PNG compression level (0-9)
-
-// Get the base uploads directory based on environment
-export function getUploadsBaseDir(): string {
-    const isProduction = process.env.NODE_ENV === 'production';
-    return isProduction
-        ? path.join(process.cwd(), 'build', 'client', 'uploads')
-        : path.join(process.cwd(), 'static', 'uploads');
-}
 
 // Ensure the base uploads directory exists with proper permissions
 function ensureDirectoryExists(dirPath: string): void {
