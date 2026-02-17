@@ -22,11 +22,11 @@ jobs:
             cd /opt/webapps/apps/adopt-me-web-app
 
             echo "Pulling latest code..."
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin develop
+            git reset --hard origin/develop
             git clean -fd
 
-            git pull origin main
+            git pull origin develop
 
             echo "Building containers..."
             docker compose -f docker-compose.yml build
