@@ -53,6 +53,7 @@
     let tags = $state<string[]>([]);
     let tagInput = $state("");
     let images = $state<string[]>([]);
+    let originalImages = $state<string[]>([]); // Track original images to delete removed ones
     let video = $state("");
     let selectedPetId = $state("");
     let preferredContact = $state<string>("");
@@ -62,6 +63,24 @@
     let pets = $state<any[]>([]);
     let loadingPets = $state(false);
 
+    // Delete file from server
+    async function deleteFile(fileUrl: string): Promise<void> {
+        if (!fileUrl) return;
+        try {
+            await fetch("/api/upload/delete", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${auth.token}`,
+                },
+                body: JSON.stringify({ fileUrl }),
+            });
+            console.log(`[EditPost] Deleted old image: ${fileUrl}`);
+        } catch (error) {
+            console.error("Failed to delete old file:", error);
+        }
+    }
+
     // Initialize form when post changes
     $effect(() => {
         if (post && open) {
@@ -70,6 +89,7 @@
             location = post.location || "";
             tags = post.tags ? [...post.tags] : [];
             images = post.images ? [...post.images] : [];
+            originalImages = post.images ? [...post.images] : []; // Track original for cleanup
             video = post.video || "";
             selectedPetId = post.pet?.id || "";
             preferredContact = post.preferredContact || "";
@@ -220,6 +240,13 @@
             if (result.errors) throw new Error(result.errors[0].message);
 
             const updatedPost = result.data.updatePost;
+
+            // Delete removed images from server
+            const removedImages = originalImages.filter(img => !images.includes(img));
+            for (const imgUrl of removedImages) {
+                await deleteFile(imgUrl);
+            }
+
             toast.success($_("edit_post.post_updated"));
             onClose();
             if (onPostUpdated) {

@@ -3,6 +3,14 @@ import { verifyToken } from '$lib/auth';
 import fs from 'fs';
 import path from 'path';
 
+// Get the base uploads directory based on environment
+function getUploadsBaseDir(): string {
+    const isProduction = process.env.NODE_ENV === 'production';
+    return isProduction
+        ? path.join(process.cwd(), 'build', 'client', 'uploads')
+        : path.join(process.cwd(), 'static', 'uploads');
+}
+
 export async function POST({ request }) {
     // 1. Authenticate Request
     const authHeader = request.headers.get('Authorization');
@@ -41,31 +49,48 @@ export async function POST({ request }) {
     // 4. Delete the file
     try {
         // Convert URL path to file system path
-        // /uploads/userId/timestamp/file.jpg -> static/uploads/userId/timestamp/file.jpg
-        const relativePath = fileUrl.startsWith('/') ? fileUrl.slice(1) : fileUrl;
-        const filePath = path.join(process.cwd(), 'static', relativePath);
+        // /uploads/userId/timestamp/file.jpg -> {baseDir}/userId/timestamp/file.jpg
+        const baseDir = getUploadsBaseDir();
+        const relativePath = urlParts.slice(2).join('/'); // userId/timestamp/file.jpg
+        const filePath = path.join(baseDir, relativePath);
+
+        console.log(`[Delete] Attempting to delete: ${filePath}`);
 
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
+            console.log(`[Delete] Successfully deleted: ${filePath}`);
 
-            // Try to clean up empty parent directories
-            const parentDir = path.dirname(filePath);
+            // Try to clean up empty parent directories (timestamp folder, then user folder)
+            const timestampDir = path.dirname(filePath);
+            const userDir = path.dirname(timestampDir);
+
             try {
-                const files = fs.readdirSync(parentDir);
-                if (files.length === 0) {
-                    fs.rmdirSync(parentDir);
+                // Clean timestamp directory if empty
+                const timestampFiles = fs.readdirSync(timestampDir);
+                if (timestampFiles.length === 0) {
+                    fs.rmdirSync(timestampDir);
+                    console.log(`[Delete] Removed empty timestamp directory: ${timestampDir}`);
+
+                    // Clean user directory if empty
+                    const userFiles = fs.readdirSync(userDir);
+                    if (userFiles.length === 0) {
+                        fs.rmdirSync(userDir);
+                        console.log(`[Delete] Removed empty user directory: ${userDir}`);
+                    }
                 }
-            } catch {
+            } catch (cleanupError) {
                 // Ignore errors when cleaning up directories
+                console.log(`[Delete] Could not clean up directories (not empty or error)`);
             }
 
             return json({ success: true, message: 'File deleted successfully' });
         } else {
+            console.log(`[Delete] File not found: ${filePath}`);
             // File doesn't exist, consider it deleted
             return json({ success: true, message: 'File already deleted or not found' });
         }
     } catch (error: any) {
-        console.error('Error deleting file:', error);
+        console.error('[Delete] Error deleting file:', error);
         return json({ error: 'Failed to delete file' }, { status: 500 });
     }
 }
