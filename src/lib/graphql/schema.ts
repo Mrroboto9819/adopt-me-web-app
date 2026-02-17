@@ -30,6 +30,14 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { sendPhoneVerificationCode, verifyPhoneCode, formatPhoneNumber } from '$lib/services/sms';
 
+// Admin email for admin-only operations (same as auth store)
+const ADMIN_EMAIL = "pablo.cabrera.castrejon@gmail.com";
+
+// Helper function to check if user is admin
+const isAdmin = (user: { email?: string } | null | undefined): boolean => {
+  return user?.email === ADMIN_EMAIL;
+};
+
 const typeDefs = `
   type CoverImageOffset {
     x: Float!
@@ -337,8 +345,29 @@ const typeDefs = `
     reporter: User
     reporterEmail: String
     status: BugReportStatus!
+    adminNotes: String
     createdAt: String!
     updatedAt: String!
+  }
+
+  type AdminReportCounts {
+    pendingBugReports: Int!
+    totalBugReports: Int!
+    pendingPostReports: Int!
+    totalPostReports: Int!
+  }
+
+  type DiskStats {
+    uploadsSize: Float!
+    uploadsSizeFormatted: String!
+    uploadsFileCount: Int!
+    diskTotal: Float!
+    diskFree: Float!
+    diskUsed: Float!
+    diskUsedPercent: Float!
+    diskTotalFormatted: String!
+    diskFreeFormatted: String!
+    diskUsedFormatted: String!
   }
 
   type LoginImage {
@@ -388,6 +417,14 @@ const typeDefs = `
     myLikedPosts(limit: Int = 50, offset: Int = 0): [Post!]!
     # Login images for carousel (public)
     loginImages: [LoginImage!]!
+
+    # Admin-only queries
+    adminBugReports(status: BugReportStatus, category: BugReportCategory, severity: BugReportSeverity, limit: Int = 50, offset: Int = 0): [BugReport!]!
+    adminBugReport(id: ID!): BugReport
+    adminReports(status: ReportStatus, reason: ReportReason, limit: Int = 50, offset: Int = 0): [Report!]!
+    adminReport(id: ID!): Report
+    adminReportCounts: AdminReportCounts!
+    adminDiskStats: DiskStats!
   }
 
   type Mutation {
@@ -449,6 +486,14 @@ const typeDefs = `
     addLoginImage(url: String!, alt: String, order: Int): LoginImage!
     updateLoginImage(id: ID!, url: String, alt: String, order: Int, isActive: Boolean): LoginImage!
     deleteLoginImage(id: ID!): Boolean!
+
+    # Admin Bug Report Mutations
+    updateBugReport(id: ID!, status: BugReportStatus, adminNotes: String): BugReport!
+    deleteBugReport(id: ID!): Boolean!
+
+    # Admin Post Report Mutations
+    updateReport(id: ID!, status: ReportStatus, adminNotes: String): Report!
+    deleteReport(id: ID!): Boolean!
   }
 `;
 
@@ -1133,6 +1178,277 @@ const resolvers = {
         ...img,
         id: img._id.toString()
       }));
+    },
+
+    // Admin-only queries
+    adminBugReports: async (
+      _: unknown,
+      { status, category, severity, limit = 50, offset = 0 }: {
+        status?: string;
+        category?: string;
+        severity?: string;
+        limit?: number;
+        offset?: number;
+      },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const filter: any = {};
+      if (status) filter.status = status;
+      if (category) filter.category = category;
+      if (severity) filter.severity = severity;
+
+      return await BugReport.find(filter)
+        .populate('reporter')
+        .limit(limit)
+        .skip(offset)
+        .sort({ createdAt: -1 });
+    },
+
+    adminBugReport: async (
+      _: unknown,
+      { id }: { id: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await BugReport.findById(id).populate('reporter');
+      if (!report) throw new GraphQLError('Bug report not found');
+      return report;
+    },
+
+    adminReports: async (
+      _: unknown,
+      { status, reason, limit = 50, offset = 0 }: {
+        status?: string;
+        reason?: string;
+        limit?: number;
+        offset?: number;
+      },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const filter: any = {};
+      if (status) filter.status = status;
+      if (reason) filter.reasons = reason;
+
+      return await Report.find(filter)
+        .populate('reporter')
+        .populate({
+          path: 'post',
+          populate: [
+            { path: 'author' },
+            {
+              path: 'pet',
+              populate: [{ path: 'species' }, { path: 'breed' }]
+            }
+          ]
+        })
+        .populate('postOwner')
+        .populate('reviewedBy')
+        .limit(limit)
+        .skip(offset)
+        .sort({ createdAt: -1 });
+    },
+
+    adminReport: async (
+      _: unknown,
+      { id }: { id: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await Report.findById(id)
+        .populate('reporter')
+        .populate({
+          path: 'post',
+          populate: [
+            { path: 'author' },
+            {
+              path: 'pet',
+              populate: [{ path: 'species' }, { path: 'breed' }]
+            }
+          ]
+        })
+        .populate('postOwner')
+        .populate('reviewedBy');
+
+      if (!report) throw new GraphQLError('Report not found');
+      return report;
+    },
+
+    adminReportCounts: async (_: unknown, __: unknown, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const [pendingBugReports, totalBugReports, pendingPostReports, totalPostReports] = await Promise.all([
+        BugReport.countDocuments({ status: 'open' }),
+        BugReport.countDocuments({}),
+        Report.countDocuments({ status: 'pending' }),
+        Report.countDocuments({})
+      ]);
+
+      return {
+        pendingBugReports,
+        totalBugReports,
+        pendingPostReports,
+        totalPostReports
+      };
+    },
+
+    adminDiskStats: async (_: unknown, __: unknown, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const fs = await import('fs');
+      const path = await import('path');
+      const { execSync } = await import('child_process');
+
+      // Helper to format bytes
+      const formatBytes = (bytes: number): string => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      };
+
+      // Get uploads directory size
+      // Support UPLOADS_DIR env var for Docker/custom deployments
+      const isProduction = process.env.NODE_ENV === 'production';
+      const uploadsDir = process.env.UPLOADS_DIR
+        ? process.env.UPLOADS_DIR
+        : isProduction
+          ? path.default.join(process.cwd(), 'build', 'client', 'uploads')
+          : path.default.join(process.cwd(), 'static', 'uploads');
+
+      let uploadsSize = 0;
+      let uploadsFileCount = 0;
+
+      const getDirectorySize = (dirPath: string): void => {
+        try {
+          const fsModule = fs.default || fs;
+          if (!fsModule.existsSync(dirPath)) {
+            console.log(`Uploads directory not found: ${dirPath}`);
+            return;
+          }
+          const files = fsModule.readdirSync(dirPath);
+          for (const file of files) {
+            const filePath = path.default.join(dirPath, file);
+            const stat = fsModule.statSync(filePath);
+            if (stat.isDirectory()) {
+              getDirectorySize(filePath);
+            } else {
+              uploadsSize += stat.size;
+              uploadsFileCount++;
+            }
+          }
+        } catch (e) {
+          console.error('Error reading uploads directory:', e);
+        }
+      };
+
+      getDirectorySize(uploadsDir);
+      console.log(`Disk stats - Uploads dir: ${uploadsDir}, Size: ${uploadsSize}, Files: ${uploadsFileCount}`);
+
+      // Get disk stats (platform-specific)
+      let diskTotal = 0;
+      let diskFree = 0;
+      let diskUsed = 0;
+
+      try {
+        // Try using Node.js fs.statfs first (most reliable, works in Docker)
+        const fsModule = fs.default || fs;
+        const statfs = fsModule.statfsSync;
+        if (typeof statfs === 'function') {
+          const stats = statfs(process.cwd());
+          // stats.bsize = block size, stats.blocks = total blocks, stats.bfree = free blocks
+          diskTotal = stats.bsize * stats.blocks;
+          diskFree = stats.bsize * stats.bfree;
+          diskUsed = diskTotal - diskFree;
+          console.log(`Disk stats via statfs - Total: ${diskTotal}, Free: ${diskFree}, Used: ${diskUsed}`);
+        } else {
+          throw new Error('statfsSync not available');
+        }
+      } catch (statfsError) {
+        // Fallback to shell commands
+        console.log('statfs not available, falling back to shell commands:', statfsError);
+        try {
+          if (process.platform === 'win32') {
+            // Windows: use wmic
+            const drive = process.cwd().split(':')[0] + ':';
+            const output = execSync(`wmic logicaldisk where "DeviceID='${drive}'" get Size,FreeSpace /format:csv`, { encoding: 'utf8' });
+            const lines = output.trim().split('\n');
+            if (lines.length >= 2) {
+              const values = lines[1].split(',');
+              if (values.length >= 3) {
+                diskFree = parseInt(values[1]) || 0;
+                diskTotal = parseInt(values[2]) || 0;
+                diskUsed = diskTotal - diskFree;
+              }
+            }
+          } else {
+            // Unix/Linux/Mac: use df with POSIX format (-P) for consistent output
+            let output = '';
+            try {
+              // Try df -P first (POSIX), then df -k, then plain df
+              output = execSync(`df -P "${process.cwd()}"`, { encoding: 'utf8' });
+            } catch {
+              try {
+                output = execSync(`df -k "${process.cwd()}"`, { encoding: 'utf8' });
+              } catch {
+                output = execSync(`df "${process.cwd()}"`, { encoding: 'utf8' });
+              }
+            }
+
+            console.log('df output:', output);
+
+            const lines = output.trim().split('\n');
+            // Find the data line (skip header, handle wrapped lines)
+            let dataLine = '';
+            for (let i = 1; i < lines.length; i++) {
+              dataLine += ' ' + lines[i];
+            }
+
+            const values = dataLine.trim().split(/\s+/);
+            console.log('Parsed df values:', values);
+
+            // Format: Filesystem 1K-blocks Used Available Use% Mounted
+            // Values array indices: 0=filesystem, 1=total, 2=used, 3=available, 4=use%, 5=mount
+            if (values.length >= 4) {
+              // Values are in 1K blocks for -P and -k flags
+              const multiplier = 1024;
+              diskTotal = (parseInt(values[1]) || 0) * multiplier;
+              diskUsed = (parseInt(values[2]) || 0) * multiplier;
+              diskFree = (parseInt(values[3]) || 0) * multiplier;
+              console.log(`Disk stats via df - Total: ${diskTotal}, Free: ${diskFree}, Used: ${diskUsed}`);
+            }
+          }
+        } catch (e) {
+          console.error('Error getting disk stats via shell:', e);
+        }
+      }
+
+      const diskUsedPercent = diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0;
+
+      return {
+        uploadsSize,
+        uploadsSizeFormatted: formatBytes(uploadsSize),
+        uploadsFileCount,
+        diskTotal,
+        diskFree,
+        diskUsed,
+        diskUsedPercent: Math.round(diskUsedPercent * 100) / 100,
+        diskTotalFormatted: formatBytes(diskTotal),
+        diskFreeFormatted: formatBytes(diskFree),
+        diskUsedFormatted: formatBytes(diskUsed),
+      };
     }
   },
   Mutation: {
@@ -2245,7 +2561,7 @@ const resolvers = {
       context: Context
     ) => {
       if (!context.user) throw new GraphQLError('Unauthorized');
-      if (context.user.role !== 'admin') throw new GraphQLError('Admin access required');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
 
       const sanitizedUrl = sanitizeUrl(url);
       if (!sanitizedUrl) {
@@ -2279,7 +2595,7 @@ const resolvers = {
       context: Context
     ) => {
       if (!context.user) throw new GraphQLError('Unauthorized');
-      if (context.user.role !== 'admin') throw new GraphQLError('Admin access required');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
 
       const image = await LoginImage.findById(id);
       if (!image) throw new GraphQLError('Login image not found');
@@ -2298,12 +2614,92 @@ const resolvers = {
 
     deleteLoginImage: async (_: unknown, { id }: { id: string }, context: Context) => {
       if (!context.user) throw new GraphQLError('Unauthorized');
-      if (context.user.role !== 'admin') throw new GraphQLError('Admin access required');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
 
       const image = await LoginImage.findById(id);
       if (!image) throw new GraphQLError('Login image not found');
 
       await LoginImage.findByIdAndDelete(id);
+      return true;
+    },
+
+    // Admin Bug Report Mutations
+    updateBugReport: async (
+      _: unknown,
+      { id, status, adminNotes }: { id: string; status?: string; adminNotes?: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await BugReport.findById(id);
+      if (!report) throw new GraphQLError('Bug report not found');
+
+      if (status !== undefined) report.status = status as any;
+      if (adminNotes !== undefined) report.adminNotes = sanitizeText(adminNotes);
+
+      const updatedReport = await report.save();
+      return await BugReport.findById(updatedReport._id).populate('reporter');
+    },
+
+    deleteBugReport: async (_: unknown, { id }: { id: string }, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await BugReport.findById(id);
+      if (!report) throw new GraphQLError('Bug report not found');
+
+      await BugReport.findByIdAndDelete(id);
+      return true;
+    },
+
+    // Admin Post Report Mutations
+    updateReport: async (
+      _: unknown,
+      { id, status, adminNotes }: { id: string; status?: string; adminNotes?: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await Report.findById(id);
+      if (!report) throw new GraphQLError('Report not found');
+
+      if (status !== undefined) {
+        report.status = status as any;
+        // Set reviewedBy and reviewedAt when status changes from pending
+        if (status !== 'pending' && !report.reviewedBy) {
+          report.reviewedBy = context.user._id as any;
+          report.reviewedAt = new Date();
+        }
+      }
+      if (adminNotes !== undefined) report.adminNotes = sanitizeText(adminNotes);
+
+      const updatedReport = await report.save();
+      return await Report.findById(updatedReport._id)
+        .populate('reporter')
+        .populate({
+          path: 'post',
+          populate: [
+            { path: 'author' },
+            {
+              path: 'pet',
+              populate: [{ path: 'species' }, { path: 'breed' }]
+            }
+          ]
+        })
+        .populate('postOwner')
+        .populate('reviewedBy');
+    },
+
+    deleteReport: async (_: unknown, { id }: { id: string }, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await Report.findById(id);
+      if (!report) throw new GraphQLError('Report not found');
+
+      await Report.findByIdAndDelete(id);
       return true;
     }
   },
@@ -2593,6 +2989,16 @@ const resolvers = {
         return parent.reviewedBy;
       }
       return await User.findById(parent.reviewedBy);
+    }
+  },
+  BugReport: {
+    id: (parent: any) => parent._id?.toString() || parent.id,
+    reporter: async (parent: any) => {
+      if (!parent.reporter) return null;
+      if (parent.reporter && typeof parent.reporter === 'object' && '_id' in parent.reporter) {
+        return parent.reporter;
+      }
+      return await User.findById(parent.reporter);
     }
   }
 };
