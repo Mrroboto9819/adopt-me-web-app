@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+import * as argon2 from 'argon2';
+import bcrypt from 'bcryptjs'; // Keep for backward compatibility with existing passwords
 import { baseSchemaFields, baseSchemaOptions } from './base';
 import type { IBase } from './base';
 
@@ -63,6 +64,9 @@ export interface IUser extends IBase {
     warningCount?: number; // Denormalized count for quick access
     // Saved posts
     savedPosts?: mongoose.Types.ObjectId[]; // References to saved posts
+    // Beta tester flag
+    isBeta?: boolean;
+    betaAgreedAt?: Date; // When user accepted beta terms
     comparePassword(password: string): Promise<boolean>;
 }
 
@@ -119,24 +123,54 @@ const userSchema = new mongoose.Schema<IUser>({
     warningCount: { type: Number, default: 0 },
     // Saved posts
     savedPosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
+    // Beta tester flag - default true since all current users are beta testers
+    isBeta: { type: Boolean, default: true },
+    betaAgreedAt: { type: Date, required: false }, // When user accepted beta terms
 }, baseSchemaOptions);
 
-// Hash password before saving
+// Hash password before saving using Argon2
 userSchema.pre('save', async function () {
     // Only hash if modified (or new)
-    // We check if 'passwordHash' was modified because we expect the app to set this field 
+    // We check if 'passwordHash' was modified because we expect the app to set this field
     // currently. In a full implementation we might use a virtual 'password' field.
     // For now, let's assume the mutation sets 'passwordHash' to the plain text password initially
     // and we hash it here.
     if (!this.isModified('passwordHash')) return;
 
-    const salt = await bcrypt.genSalt(10);
-    this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
+    // Use Argon2id (recommended variant) with secure defaults
+    // - Memory: 65536 KB (64 MB)
+    // - Iterations: 3
+    // - Parallelism: 4
+    this.passwordHash = await argon2.hash(this.passwordHash, {
+        type: argon2.argon2id,
+        memoryCost: 65536,
+        timeCost: 3,
+        parallelism: 4,
+    });
 });
 
 // Helper method to compare password
+// Supports both Argon2 (new) and bcrypt (legacy) for backward compatibility
 userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
-    return await bcrypt.compare(candidatePassword, this.passwordHash);
+    const storedHash = this.passwordHash;
+
+    // Check if it's an Argon2 hash (starts with $argon2)
+    if (storedHash.startsWith('$argon2')) {
+        return await argon2.verify(storedHash, candidatePassword);
+    }
+
+    // Legacy bcrypt hash (starts with $2a$ or $2b$)
+    // This allows existing users to still log in
+    const isValid = await bcrypt.compare(candidatePassword, storedHash);
+
+    // Optional: Auto-upgrade to Argon2 on successful login
+    // This gradually migrates all users to Argon2
+    if (isValid) {
+        this.passwordHash = candidatePassword; // Will be hashed by pre-save hook
+        await this.save();
+    }
+
+    return isValid;
 };
 
 // Delete cached model in development to pick up schema changes

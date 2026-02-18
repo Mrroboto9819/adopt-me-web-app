@@ -47,6 +47,21 @@
         "days_ago": "{count}d ago",
         "weeks_ago": "{count}w ago"
     },
+    "beta": {
+        "title": "Welcome to Open Beta!",
+        "subtitle": "Thank you for being an early adopter",
+        "bugs_title": "Bugs & Errors May Occur",
+        "bugs_desc": "This is a beta version of AdoptMe. You may encounter unexpected errors, bugs, or incomplete features as we continue to develop and improve the platform.",
+        "report_title": "Help Us Improve",
+        "report_desc": "Found a bug? Use the bug report button in the bottom-right corner of your screen to let us know. Your feedback is invaluable!",
+        "data_title": "Data May Be Reset",
+        "data_desc": "Posts, images, and other content created during the beta period may be removed or reset when we launch the official release version.",
+        "disclaimer": "By continuing, you acknowledge that this is a beta version and accept these conditions.",
+        "hold_button": "Hold to Accept & Continue",
+        "hold_to_continue": "Keep holding...",
+        "hold_hint": "Hold the button for 2 seconds to continue",
+        "understood": "Got it!"
+    },
     "nav": {
         "home": "Home",
         "feed": "Feed",
@@ -66,7 +81,8 @@
         "add_verify_contacts": "Verify your email & phone to unlock all features",
         "verify_now": "Complete Now",
         "support_message": "Help us keep AdoptMe free",
-        "buy_coffee": "Buy us a coffee"
+        "buy_coffee": "Buy us a coffee",
+        "admin_panel": "Admin Panel"
     },
     "home": {
         "title": "Home - Find Pets for Adoption",
@@ -165,6 +181,38 @@
         "reason_animal_abuse_desc": "Content showing animal cruelty or neglect",
         "reason_fake_listing": "Fake Listing",
         "reason_fake_listing_desc": "False or misleading pet information",
+        "reason_other": "Other",
+        "reason_other_desc": "Something else not listed here"
+    },
+    "user_report": {
+        "title": "Report User",
+        "subtitle": "Help us understand the issue with",
+        "why_reporting": "Why are you reporting this user?",
+        "select_all": "Select all that apply",
+        "additional_details": "Additional details",
+        "additional_placeholder": "Provide any additional context that might help us review this report...",
+        "warning": "False reports may result in action against your account. Please only report genuine concerns.",
+        "submit_report": "Submit Report",
+        "select_reason": "Please select at least one reason for the report",
+        "must_login": "You must be logged in to report a user",
+        "success": "Report submitted successfully. Thank you for helping keep our community safe.",
+        "failed": "Failed to submit report",
+        "reason_harassment": "Harassment",
+        "reason_harassment_desc": "Bullying, intimidation, or threatening behavior",
+        "reason_spam": "Spam",
+        "reason_spam_desc": "Sending unsolicited or repetitive messages",
+        "reason_scam": "Scam / Fraud",
+        "reason_scam_desc": "Deceptive or fraudulent activity",
+        "reason_fake_profile": "Fake Profile",
+        "reason_fake_profile_desc": "Profile with false or misleading information",
+        "reason_impersonation": "Impersonation",
+        "reason_impersonation_desc": "Pretending to be someone else",
+        "reason_inappropriate": "Inappropriate Content",
+        "reason_inappropriate_desc": "Posting offensive or unsuitable material",
+        "reason_animal_abuse": "Animal Abuse",
+        "reason_animal_abuse_desc": "Evidence of animal cruelty or neglect",
+        "reason_threats": "Threats",
+        "reason_threats_desc": "Making threats of violence or harm",
         "reason_other": "Other",
         "reason_other_desc": "Something else not listed here"
     },
@@ -499,7 +547,9 @@
         "terms_of_service": "Terms of Service",
         "and": "and",
         "privacy_policy": "Privacy Policy",
-        "must_agree_terms": "You must agree to the Terms of Service and Privacy Policy to continue"
+        "must_agree_terms": "You must agree to the Terms of Service and Privacy Policy to continue",
+        "account_suspended": "Your account has been suspended. Please contact support for more information.",
+        "account_banned": "Your account has been banned"
     },
     "privacy": {
         "seo_title": "Privacy Policy",
@@ -1052,12 +1102,18 @@
         "back_to_login": "Back to login"
     },
     "admin": {
-        "dashboard": "Admin Dashboard",
+        "back_to_site": "Back to Site",
+        "invites": "Invites",
+        "dashboard": "Dashboard",
         "welcome_back": "Welcome back, {name}",
+        "users": "Users",
+        "users_desc": "Manage user accounts, warnings, and bans",
         "bug_reports": "Bug Reports",
         "bug_reports_desc": "Manage user-submitted bug reports and feature requests",
         "post_reports": "Post Reports",
         "post_reports_desc": "Review reported posts and take action",
+        "user_reports": "User Reports",
+        "user_reports_desc": "Review reported users and take action",
         "beta_invites": "Beta Invites",
         "send_invites": "Send invitation emails",
         "quick_actions": "Quick Actions",

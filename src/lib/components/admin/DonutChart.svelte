@@ -105,13 +105,13 @@
     </div>
 
     <!-- Legend -->
-    {#if segments.length > 0}
+    {#if paths().length > 0}
         <div class="mt-4 flex flex-wrap justify-center gap-4">
-            {#each paths() as path, i}
+            {#each paths() as path}
                 <div class="flex items-center gap-2">
                     <div class="w-3 h-3 rounded-full" style="background-color: {path.color}"></div>
                     <span class="text-xs text-gray-600 dark:text-gray-400">
-                        {segments[i].label} ({path.percent}%)
+                        {path.label} ({path.percent}%)
                     </span>
                 </div>
             {/each}

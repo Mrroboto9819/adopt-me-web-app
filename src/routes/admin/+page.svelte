@@ -17,16 +17,44 @@
         HardDrive,
         Image as ImageIcon,
         RefreshCw,
+        MessageSquare,
+        TrendingUp,
+        Calendar,
+        UserX,
     } from "lucide-svelte";
     import { toast } from "$lib/stores/toast.svelte";
     import DonutChart from "$lib/components/admin/DonutChart.svelte";
+
+    // Stats state
+    interface StatCount {
+        label: string;
+        value: number;
+        color?: string;
+    }
+
+    let adminStats = $state({
+        totalUsers: 0,
+        totalPosts: 0,
+        totalPets: 0,
+        totalComments: 0,
+        postsByType: [] as StatCount[],
+        petsByStatus: [] as StatCount[],
+        petsBySpecies: [] as StatCount[],
+        recentUsers: 0,
+        recentPosts: 0,
+        recentPets: 0,
+        usersLast30Days: 0,
+        postsLast30Days: 0,
+    });
 
     // Report counts state
     let reportCounts = $state({
         pendingBugReports: 0,
         totalBugReports: 0,
         pendingPostReports: 0,
-        totalPostReports: 0
+        totalPostReports: 0,
+        pendingUserReports: 0,
+        totalUserReports: 0
     });
 
     // Disk stats state
@@ -44,7 +72,54 @@
     });
 
     let loading = $state(true);
+    let loadingStats = $state(true);
     let loadingDisk = $state(true);
+
+    // Fetch admin stats
+    async function fetchAdminStats() {
+        loadingStats = true;
+        try {
+            const response = await fetch("/api/graphql", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${auth.token}`,
+                },
+                body: JSON.stringify({
+                    query: `
+                        query AdminStats {
+                            adminStats {
+                                totalUsers
+                                totalPosts
+                                totalPets
+                                totalComments
+                                postsByType { label value color }
+                                petsByStatus { label value color }
+                                petsBySpecies { label value color }
+                                recentUsers
+                                recentPosts
+                                recentPets
+                                usersLast30Days
+                                postsLast30Days
+                            }
+                        }
+                    `,
+                }),
+            });
+
+            const result = await response.json();
+            if (result.errors) {
+                console.error("Failed to fetch admin stats:", result.errors);
+                return;
+            }
+
+            adminStats = result.data.adminStats;
+        } catch (error) {
+            console.error("Failed to fetch admin stats:", error);
+        } finally {
+            loadingStats = false;
+        }
+    }
 
     // Fetch report counts
     async function fetchReportCounts() {
@@ -63,6 +138,8 @@
                                 totalBugReports
                                 pendingPostReports
                                 totalPostReports
+                                pendingUserReports
+                                totalUserReports
                             }
                         }
                     `,
@@ -127,26 +204,21 @@
         }
     }
 
+    async function refreshAll() {
+        await Promise.all([fetchAdminStats(), fetchReportCounts(), fetchDiskStats()]);
+    }
+
     onMount(() => {
         if (auth.token) {
-            fetchReportCounts();
-            fetchDiskStats();
+            refreshAll();
         }
     });
-
-    // Dynamic stats based on report counts
-    let stats = $derived([
-        { label: "Bug Reports", value: loading ? "..." : `${reportCounts.pendingBugReports}/${reportCounts.totalBugReports}`, icon: Bug, color: "text-orange-500", sublabel: "pending/total" },
-        { label: "Post Reports", value: loading ? "..." : `${reportCounts.pendingPostReports}/${reportCounts.totalPostReports}`, icon: Flag, color: "text-red-500", sublabel: "pending/total" },
-        { label: "Total Pets", value: "—", icon: PawPrint, color: "text-green-500", sublabel: "" },
-        { label: "Total Posts", value: "—", icon: FileText, color: "text-purple-500", sublabel: "" },
-    ]);
 
     // Disk usage chart segments
     let diskChartSegments = $derived([
         { value: diskStats.uploadsSize, color: "#8b5cf6", label: "Uploads" },
         { value: diskStats.diskUsed - diskStats.uploadsSize, color: "#6366f1", label: "Other Used" },
-        { value: diskStats.diskFree, color: "#e5e7eb", label: "Free" },
+        { value: diskStats.diskFree, color: "#374151", label: "Free" },
     ]);
 </script>
 
@@ -154,275 +226,489 @@
     <title>Admin Dashboard - AdoptMe</title>
 </svelte:head>
 
-<!-- Admin Dashboard -->
-    <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div class="max-w-7xl mx-auto px-4 py-8">
-            <!-- Header -->
-            <div class="flex items-center gap-4 mb-8">
-                <div class="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center">
-                    <Shield class="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                <Shield class="w-6 h-6 text-amber-400" />
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold text-white">Dashboard</h1>
+                <p class="text-sm text-gray-400">
+                    Welcome back, {auth.user?.firstName}
+                </p>
+            </div>
+        </div>
+        <button
+            onclick={refreshAll}
+            disabled={loadingStats}
+            class="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+        >
+            <RefreshCw class="w-4 h-4 {loadingStats ? 'animate-spin' : ''}" />
+            <span class="hidden sm:inline">Refresh</span>
+        </button>
+    </div>
+
+    <!-- Main Stats Grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                    <Users class="w-5 h-5 text-blue-400" />
                 </div>
                 <div>
-                    <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Admin Dashboard</h1>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                        Welcome back, {auth.user?.firstName}
+                    <p class="text-2xl font-bold text-white">
+                        {loadingStats ? "..." : adminStats.totalUsers}
                     </p>
+                    <p class="text-xs text-gray-400">Total Users</p>
                 </div>
             </div>
+        </div>
 
-            <!-- Stats Grid -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                {#each stats as stat}
-                    <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                                <stat.icon class="w-5 h-5 {stat.color}" />
-                            </div>
-                            <div>
-                                <p class="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400">{stat.label}</p>
-                                {#if stat.sublabel}
-                                    <p class="text-[10px] text-gray-400 dark:text-gray-500">{stat.sublabel}</p>
-                                {/if}
-                            </div>
-                        </div>
-                    </div>
-                {/each}
-            </div>
-
-            <!-- Main Content Grid -->
-            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- Bug Reports Card -->
-                <a
-                    href="/admin/bugs"
-                    class="group bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md hover:border-orange-200 dark:hover:border-orange-800 transition-all"
-                >
-                    <div class="p-6">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex items-center justify-center">
-                                    <Bug class="w-6 h-6 text-orange-600 dark:text-orange-400" />
-                                </div>
-                                <div>
-                                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
-                                        Bug Reports
-                                    </h2>
-                                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                                        Review user-submitted bugs
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                {#if reportCounts.pendingBugReports > 0}
-                                    <span class="px-2 py-1 bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-xs font-semibold rounded-full">
-                                        {reportCounts.pendingBugReports} open
-                                    </span>
-                                {/if}
-                                <ChevronRight class="w-5 h-5 text-gray-400 group-hover:text-orange-500 group-hover:translate-x-1 transition-all" />
-                            </div>
-                        </div>
-                    </div>
-                </a>
-
-                <!-- Post Reports Card -->
-                <a
-                    href="/admin/reports"
-                    class="group bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md hover:border-red-200 dark:hover:border-red-800 transition-all"
-                >
-                    <div class="p-6">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-xl flex items-center justify-center">
-                                    <Flag class="w-6 h-6 text-red-600 dark:text-red-400" />
-                                </div>
-                                <div>
-                                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
-                                        Post Reports
-                                    </h2>
-                                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                                        Review reported posts
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                {#if reportCounts.pendingPostReports > 0}
-                                    <span class="px-2 py-1 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-xs font-semibold rounded-full">
-                                        {reportCounts.pendingPostReports} pending
-                                    </span>
-                                {/if}
-                                <ChevronRight class="w-5 h-5 text-gray-400 group-hover:text-red-500 group-hover:translate-x-1 transition-all" />
-                            </div>
-                        </div>
-                    </div>
-                </a>
-
-                <!-- Beta Invite Tool Card -->
-                <a
-                    href="/admin/invite"
-                    class="group bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-800 transition-all"
-                >
-                    <div class="p-6">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center">
-                                    <Mail class="w-6 h-6 text-amber-600 dark:text-amber-400" />
-                                </div>
-                                <div>
-                                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                                        Beta Invites
-                                    </h2>
-                                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                                        Send invitation emails
-                                    </p>
-                                </div>
-                            </div>
-                            <ChevronRight class="w-5 h-5 text-gray-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all" />
-                        </div>
-                    </div>
-                </a>
-            </div>
-
-            <!-- Disk Usage Section -->
-            <div class="mt-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                <div class="p-6 border-b border-gray-100 dark:border-gray-700">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
-                                <HardDrive class="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                            </div>
-                            <div>
-                                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Disk Usage</h2>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Storage and uploads overview</p>
-                            </div>
-                        </div>
-                        <button
-                            onclick={fetchDiskStats}
-                            disabled={loadingDisk}
-                            class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                        >
-                            <RefreshCw class="w-4 h-4 {loadingDisk ? 'animate-spin' : ''}" />
-                        </button>
-                    </div>
+        <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
+                    <FileText class="w-5 h-5 text-purple-400" />
                 </div>
-
-                <div class="p-6">
-                    {#if loadingDisk}
-                        <div class="flex items-center justify-center py-12">
-                            <Loader2 class="w-8 h-8 text-indigo-500 animate-spin" />
-                        </div>
-                    {:else}
-                        <div class="grid md:grid-cols-2 gap-8 items-center">
-                            <!-- Chart -->
-                            <div class="flex justify-center">
-                                <DonutChart
-                                    segments={diskChartSegments}
-                                    size={180}
-                                    thickness={28}
-                                    centerValue="{diskStats.diskUsedPercent}%"
-                                    centerLabel="Used"
-                                />
-                            </div>
-
-                            <!-- Stats -->
-                            <div class="space-y-4">
-                                <!-- Total Disk -->
-                                <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
-                                    <div class="flex items-center gap-3">
-                                        <HardDrive class="w-5 h-5 text-gray-500" />
-                                        <div class="flex-1">
-                                            <p class="text-sm text-gray-500 dark:text-gray-400">Total Disk Space</p>
-                                            <p class="text-lg font-semibold text-gray-900 dark:text-white">{diskStats.diskTotalFormatted}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Used Space -->
-                                <div class="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-3 h-3 rounded-full bg-indigo-500"></div>
-                                        <div class="flex-1">
-                                            <p class="text-sm text-gray-500 dark:text-gray-400">Used Space</p>
-                                            <p class="text-lg font-semibold text-gray-900 dark:text-white">{diskStats.diskUsedFormatted}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Free Space -->
-                                <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-3 h-3 rounded-full bg-gray-300 dark:bg-gray-600"></div>
-                                        <div class="flex-1">
-                                            <p class="text-sm text-gray-500 dark:text-gray-400">Free Space</p>
-                                            <p class="text-lg font-semibold text-gray-900 dark:text-white">{diskStats.diskFreeFormatted}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Uploads Folder -->
-                                <div class="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl border-2 border-purple-200 dark:border-purple-800">
-                                    <div class="flex items-center gap-3">
-                                        <ImageIcon class="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                                        <div class="flex-1">
-                                            <p class="text-sm text-gray-500 dark:text-gray-400">Uploads Folder</p>
-                                            <p class="text-lg font-semibold text-purple-700 dark:text-purple-300">{diskStats.uploadsSizeFormatted}</p>
-                                            <p class="text-xs text-gray-500 dark:text-gray-400">{diskStats.uploadsFileCount} files</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    {/if}
+                <div>
+                    <p class="text-2xl font-bold text-white">
+                        {loadingStats ? "..." : adminStats.totalPosts}
+                    </p>
+                    <p class="text-xs text-gray-400">Total Posts</p>
                 </div>
             </div>
+        </div>
 
-            <!-- Quick Actions -->
-            <div class="mt-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                <div class="p-6 border-b border-gray-100 dark:border-gray-700">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                            <Settings class="w-5 h-5 text-green-600 dark:text-green-400" />
-                        </div>
-                        <div>
-                            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Quick Actions</h2>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Common admin tasks</p>
-                        </div>
-                    </div>
+        <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
+                    <PawPrint class="w-5 h-5 text-green-400" />
                 </div>
-
-                <div class="p-6 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <a
-                        href="/profile?tab=settings"
-                        class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                    >
-                        <Users class="w-5 h-5 text-gray-500" />
-                        <span class="text-sm text-gray-700 dark:text-gray-300">My Profile Settings</span>
-                    </a>
-
-                    <button
-                        onclick={() => toast.info("Coming soon!")}
-                        class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
-                    >
-                        <BarChart3 class="w-5 h-5 text-gray-500" />
-                        <span class="text-sm text-gray-700 dark:text-gray-300">View Analytics</span>
-                    </button>
-
-                    <button
-                        onclick={() => toast.info("Coming soon!")}
-                        class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left"
-                    >
-                        <PawPrint class="w-5 h-5 text-gray-500" />
-                        <span class="text-sm text-gray-700 dark:text-gray-300">Manage Species/Breeds</span>
-                    </button>
-
-                    <a
-                        href="/"
-                        class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                    >
-                        <FileText class="w-5 h-5 text-gray-500" />
-                        <span class="text-sm text-gray-700 dark:text-gray-300">View Public Feed</span>
-                    </a>
+                <div>
+                    <p class="text-2xl font-bold text-white">
+                        {loadingStats ? "..." : adminStats.totalPets}
+                    </p>
+                    <p class="text-xs text-gray-400">Total Pets</p>
                 </div>
             </div>
+        </div>
 
+        <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-pink-500/20 rounded-lg flex items-center justify-center">
+                    <MessageSquare class="w-5 h-5 text-pink-400" />
+                </div>
+                <div>
+                    <p class="text-2xl font-bold text-white">
+                        {loadingStats ? "..." : adminStats.totalComments}
+                    </p>
+                    <p class="text-xs text-gray-400">Comments</p>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Admin Quick Actions Row -->
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Users -->
+        <a
+            href="/admin/users"
+            class="group bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 hover:border-indigo-500/50 transition-all"
+        >
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-indigo-500/20 rounded-lg flex items-center justify-center">
+                        <Users class="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <div>
+                        <p class="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">{$_("admin.users")}</p>
+                        <p class="text-xs text-gray-400">{loadingStats ? "..." : adminStats.totalUsers} total users</p>
+                    </div>
+                </div>
+                <ChevronRight class="w-5 h-5 text-gray-600 group-hover:text-indigo-400 transition-colors" />
+            </div>
+        </a>
+
+        <!-- Bug Reports -->
+        <a
+            href="/admin/bugs"
+            class="group bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 hover:border-orange-500/50 transition-all"
+        >
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-orange-500/20 rounded-lg flex items-center justify-center">
+                        <Bug class="w-5 h-5 text-orange-400" />
+                    </div>
+                    <div>
+                        <p class="text-lg font-semibold text-white group-hover:text-orange-400 transition-colors">{$_("admin.bug_reports")}</p>
+                        <p class="text-xs text-gray-400">{reportCounts.pendingBugReports} pending / {reportCounts.totalBugReports} total</p>
+                    </div>
+                </div>
+                {#if reportCounts.pendingBugReports > 0}
+                    <span class="px-2 py-1 bg-orange-500/20 text-orange-400 text-xs font-semibold rounded-full">
+                        {reportCounts.pendingBugReports}
+                    </span>
+                {/if}
+            </div>
+        </a>
+
+        <!-- Post Reports -->
+        <a
+            href="/admin/reports"
+            class="group bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 hover:border-red-500/50 transition-all"
+        >
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
+                        <Flag class="w-5 h-5 text-red-400" />
+                    </div>
+                    <div>
+                        <p class="text-lg font-semibold text-white group-hover:text-red-400 transition-colors">{$_("admin.post_reports")}</p>
+                        <p class="text-xs text-gray-400">{reportCounts.pendingPostReports} pending / {reportCounts.totalPostReports} total</p>
+                    </div>
+                </div>
+                {#if reportCounts.pendingPostReports > 0}
+                    <span class="px-2 py-1 bg-red-500/20 text-red-400 text-xs font-semibold rounded-full">
+                        {reportCounts.pendingPostReports}
+                    </span>
+                {/if}
+            </div>
+        </a>
+
+        <!-- User Reports -->
+        <a
+            href="/admin/user-reports"
+            class="group bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 hover:border-amber-500/50 transition-all"
+        >
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center">
+                        <UserX class="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                        <p class="text-lg font-semibold text-white group-hover:text-amber-400 transition-colors">{$_("admin.user_reports")}</p>
+                        <p class="text-xs text-gray-400">{reportCounts.pendingUserReports} pending / {reportCounts.totalUserReports} total</p>
+                    </div>
+                </div>
+                {#if reportCounts.pendingUserReports > 0}
+                    <span class="px-2 py-1 bg-amber-500/20 text-amber-400 text-xs font-semibold rounded-full">
+                        {reportCounts.pendingUserReports}
+                    </span>
+                {/if}
+            </div>
+        </a>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Posts by Type -->
+        <div class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+            <div class="p-4 border-b border-gray-700/50">
+                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                    <FileText class="w-4 h-4 text-purple-400" />
+                    Posts by Type
+                </h3>
+            </div>
+            <div class="p-4">
+                {#if loadingStats}
+                    <div class="flex justify-center py-8">
+                        <Loader2 class="w-6 h-6 text-purple-400 animate-spin" />
+                    </div>
+                {:else}
+                    <div class="flex justify-center mb-4">
+                        <DonutChart
+                            segments={adminStats.postsByType.map(p => ({ value: p.value, color: p.color || '#8b5cf6', label: p.label }))}
+                            size={140}
+                            thickness={24}
+                            centerValue={adminStats.totalPosts.toString()}
+                            centerLabel="Total"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        {#each adminStats.postsByType as item}
+                            <div class="flex items-center justify-between text-sm">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full" style="background-color: {item.color}"></div>
+                                    <span class="text-gray-300">{item.label}</span>
+                                </div>
+                                <span class="text-white font-medium">{item.value}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+        </div>
+
+        <!-- Pets by Status -->
+        <div class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+            <div class="p-4 border-b border-gray-700/50">
+                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                    <PawPrint class="w-4 h-4 text-green-400" />
+                    Pets by Status
+                </h3>
+            </div>
+            <div class="p-4">
+                {#if loadingStats}
+                    <div class="flex justify-center py-8">
+                        <Loader2 class="w-6 h-6 text-green-400 animate-spin" />
+                    </div>
+                {:else}
+                    <div class="flex justify-center mb-4">
+                        <DonutChart
+                            segments={adminStats.petsByStatus.map(p => ({ value: p.value, color: p.color || '#22c55e', label: p.label }))}
+                            size={140}
+                            thickness={24}
+                            centerValue={adminStats.totalPets.toString()}
+                            centerLabel="Total"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        {#each adminStats.petsByStatus as item}
+                            <div class="flex items-center justify-between text-sm">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full" style="background-color: {item.color}"></div>
+                                    <span class="text-gray-300">{item.label}</span>
+                                </div>
+                                <span class="text-white font-medium">{item.value}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+        </div>
+
+        <!-- Pets by Species -->
+        <div class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+            <div class="p-4 border-b border-gray-700/50">
+                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                    <BarChart3 class="w-4 h-4 text-pink-400" />
+                    Top Species
+                </h3>
+            </div>
+            <div class="p-4">
+                {#if loadingStats}
+                    <div class="flex justify-center py-8">
+                        <Loader2 class="w-6 h-6 text-pink-400 animate-spin" />
+                    </div>
+                {:else if adminStats.petsBySpecies.length === 0}
+                    <p class="text-center text-gray-500 py-8 text-sm">No data yet</p>
+                {:else}
+                    <div class="space-y-3">
+                        {#each adminStats.petsBySpecies as item}
+                            {@const maxValue = Math.max(...adminStats.petsBySpecies.map(s => s.value))}
+                            {@const percentage = maxValue > 0 ? (item.value / maxValue) * 100 : 0}
+                            <div>
+                                <div class="flex items-center justify-between text-sm mb-1">
+                                    <span class="text-gray-300">{item.label}</span>
+                                    <span class="text-white font-medium">{item.value}</span>
+                                </div>
+                                <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                                    <div
+                                        class="h-full rounded-full transition-all duration-500"
+                                        style="width: {percentage}%; background-color: {item.color}"
+                                    ></div>
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity & Disk Usage -->
+    <div class="grid md:grid-cols-2 gap-6">
+        <!-- Recent Activity -->
+        <div class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+            <div class="p-4 border-b border-gray-700/50">
+                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                    <TrendingUp class="w-4 h-4 text-cyan-400" />
+                    Recent Activity
+                </h3>
+            </div>
+            <div class="p-4">
+                {#if loadingStats}
+                    <div class="flex justify-center py-8">
+                        <Loader2 class="w-6 h-6 text-cyan-400 animate-spin" />
+                    </div>
+                {:else}
+                    <div class="grid grid-cols-3 gap-4 mb-6">
+                        <div class="text-center">
+                            <p class="text-2xl font-bold text-cyan-400">{adminStats.recentUsers}</p>
+                            <p class="text-xs text-gray-400">New Users</p>
+                            <p class="text-[10px] text-gray-500">Last 7 days</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-2xl font-bold text-purple-400">{adminStats.recentPosts}</p>
+                            <p class="text-xs text-gray-400">New Posts</p>
+                            <p class="text-[10px] text-gray-500">Last 7 days</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-2xl font-bold text-green-400">{adminStats.recentPets}</p>
+                            <p class="text-xs text-gray-400">New Pets</p>
+                            <p class="text-[10px] text-gray-500">Last 7 days</p>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-gray-700/50 pt-4">
+                        <div class="flex items-center gap-2 text-sm text-gray-400 mb-2">
+                            <Calendar class="w-4 h-4" />
+                            Last 30 Days Growth
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-gray-700/30 rounded-lg p-3">
+                                <p class="text-lg font-bold text-white">{adminStats.usersLast30Days}</p>
+                                <p class="text-xs text-gray-400">New Users</p>
+                            </div>
+                            <div class="bg-gray-700/30 rounded-lg p-3">
+                                <p class="text-lg font-bold text-white">{adminStats.postsLast30Days}</p>
+                                <p class="text-xs text-gray-400">New Posts</p>
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+            </div>
+        </div>
+
+        <!-- Disk Usage -->
+        <div class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+            <div class="p-4 border-b border-gray-700/50 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                    <HardDrive class="w-4 h-4 text-purple-400" />
+                    Storage Overview
+                </h3>
+                <button
+                    onclick={fetchDiskStats}
+                    disabled={loadingDisk}
+                    class="p-1.5 text-gray-400 hover:bg-gray-700 rounded transition-colors"
+                >
+                    <RefreshCw class="w-3.5 h-3.5 {loadingDisk ? 'animate-spin' : ''}" />
+                </button>
+            </div>
+            <div class="p-4">
+                {#if loadingDisk}
+                    <div class="flex justify-center py-8">
+                        <Loader2 class="w-6 h-6 text-purple-400 animate-spin" />
+                    </div>
+                {:else}
+                    <!-- Main Usage Display -->
+                    <div class="flex items-center justify-center mb-6">
+                        <DonutChart
+                            segments={diskChartSegments}
+                            size={140}
+                            thickness={16}
+                            centerValue="{diskStats.diskUsedPercent}%"
+                            centerLabel="Used"
+                        />
+                    </div>
+
+                    <!-- Overall Progress Bar -->
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between text-xs mb-2">
+                            <span class="text-gray-400">Disk Space</span>
+                            <span class="text-white font-medium">{diskStats.diskUsedFormatted} / {diskStats.diskTotalFormatted}</span>
+                        </div>
+                        <div class="h-3 bg-gray-700/50 rounded-full overflow-hidden relative">
+                            <!-- Gradient progress bar -->
+                            <div
+                                class="h-full rounded-full transition-all duration-700 ease-out relative overflow-hidden"
+                                style="width: {diskStats.diskUsedPercent}%; background: linear-gradient(90deg, #8b5cf6 0%, #6366f1 50%, #4f46e5 100%);"
+                            >
+                                <!-- Shine effect -->
+                                <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse"></div>
+                            </div>
+                            <!-- Warning threshold markers -->
+                            <div class="absolute top-0 bottom-0 left-[75%] w-px bg-yellow-500/50"></div>
+                            <div class="absolute top-0 bottom-0 left-[90%] w-px bg-red-500/50"></div>
+                        </div>
+                        <div class="flex justify-between mt-1">
+                            <span class="text-[10px] text-gray-500">0%</span>
+                            <span class="text-[10px] text-yellow-500/70">75%</span>
+                            <span class="text-[10px] text-red-500/70">90%</span>
+                            <span class="text-[10px] text-gray-500">100%</span>
+                        </div>
+                    </div>
+
+                    <!-- Stats Grid -->
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <div class="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3 text-center">
+                            <div class="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center mx-auto mb-2">
+                                <ImageIcon class="w-4 h-4 text-purple-400" />
+                            </div>
+                            <p class="text-sm font-bold text-purple-400">{diskStats.uploadsSizeFormatted}</p>
+                            <p class="text-[10px] text-gray-400">Uploads</p>
+                        </div>
+                        <div class="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-center">
+                            <div class="w-8 h-8 bg-indigo-500/20 rounded-lg flex items-center justify-center mx-auto mb-2">
+                                <HardDrive class="w-4 h-4 text-indigo-400" />
+                            </div>
+                            <p class="text-sm font-bold text-indigo-400">{diskStats.diskUsedFormatted}</p>
+                            <p class="text-[10px] text-gray-400">Total Used</p>
+                        </div>
+                        <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center">
+                            <div class="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center mx-auto mb-2">
+                                <HardDrive class="w-4 h-4 text-emerald-400" />
+                            </div>
+                            <p class="text-sm font-bold text-emerald-400">{diskStats.diskFreeFormatted}</p>
+                            <p class="text-[10px] text-gray-400">Free Space</p>
+                        </div>
+                    </div>
+
+                    <!-- Footer Info -->
+                    <div class="flex items-center justify-between pt-3 border-t border-gray-700/50">
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 bg-gray-700/50 rounded-lg flex items-center justify-center">
+                                <ImageIcon class="w-3 h-3 text-gray-400" />
+                            </div>
+                            <span class="text-xs text-gray-400">{diskStats.uploadsFileCount} files uploaded</span>
+                        </div>
+                        <div class="px-2 py-1 rounded-lg text-xs font-medium {diskStats.diskUsedPercent > 90 ? 'bg-red-500/20 text-red-400' : diskStats.diskUsedPercent > 75 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-emerald-500/20 text-emerald-400'}">
+                            {diskStats.diskUsedPercent > 90 ? 'Critical' : diskStats.diskUsedPercent > 75 ? 'Warning' : 'Healthy'}
+                        </div>
+                    </div>
+                {/if}
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bg-gray-800/50 rounded-xl border border-gray-700/50 overflow-hidden">
+        <div class="p-4 border-b border-gray-700/50">
+            <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                <Settings class="w-4 h-4 text-gray-400" />
+                Quick Actions
+            </h3>
+        </div>
+        <div class="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <a
+                href="/admin/invite"
+                class="flex items-center gap-3 p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors"
+            >
+                <Mail class="w-5 h-5 text-amber-400" />
+                <span class="text-sm text-gray-300">Send Invites</span>
+            </a>
+            <a
+                href="/"
+                class="flex items-center gap-3 p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors"
+            >
+                <FileText class="w-5 h-5 text-purple-400" />
+                <span class="text-sm text-gray-300">View Feed</span>
+            </a>
+            <a
+                href="/profile?tab=settings"
+                class="flex items-center gap-3 p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors"
+            >
+                <Users class="w-5 h-5 text-blue-400" />
+                <span class="text-sm text-gray-300">My Profile</span>
+            </a>
+            <button
+                onclick={() => toast.info("Coming soon!")}
+                class="flex items-center gap-3 p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors text-left"
+            >
+                <BarChart3 class="w-5 h-5 text-cyan-400" />
+                <span class="text-sm text-gray-300">Analytics</span>
+            </button>
+        </div>
+    </div>
+</div>

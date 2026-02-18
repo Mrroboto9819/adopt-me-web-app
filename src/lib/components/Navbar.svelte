@@ -1,6 +1,6 @@
 <script lang="ts">
     import { auth } from "$lib/stores/auth.svelte";
-    import { User, LogOut, Menu, X, Settings, Search, Home, Globe, Bell, AlertTriangle, Mail, Phone } from "lucide-svelte";
+    import { User, LogOut, Menu, X, Settings, Search, Home, Globe, Bell, AlertTriangle, Mail, Phone, Shield } from "lucide-svelte";
     import { page } from "$app/stores";
     import logo from "$lib/assets/logo_text.svg";
     import { goto } from "$app/navigation";
@@ -529,6 +529,17 @@
                                 {$t("nav.settings")}
                             </a>
 
+                            {#if auth.isAdmin}
+                                <a
+                                    href="/admin"
+                                    onclick={closeAll}
+                                    class="dropdown-item flex items-center gap-3 px-4 py-2.5 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                                >
+                                    <Shield class="w-4 h-4" />
+                                    {$t("nav.admin_panel")}
+                                </a>
+                            {/if}
+
                             <div class="border-t border-gray-50 dark:border-gray-700 my-1"></div>
 
                             <button
@@ -741,6 +752,16 @@
                         <Settings class="w-5 h-5" />
                         {$t("nav.settings")}
                     </a>
+                    {#if auth.isAdmin}
+                        <a
+                            href="/admin"
+                            onclick={closeAll}
+                            class="menu-item flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                        >
+                            <Shield class="w-5 h-5" />
+                            {$t("nav.admin_panel")}
+                        </a>
+                    {/if}
                 {/if}
 
                 <!-- Language Section -->

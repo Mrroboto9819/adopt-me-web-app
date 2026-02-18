@@ -17,6 +17,9 @@ interface User {
     phoneCountryCode?: string;
     phoneVerified?: boolean;
     emailVerified?: boolean;
+    isAdmin?: boolean;
+    isBeta?: boolean;
+    betaAgreedAt?: string;
     notifications?: {
         email?: boolean;
         push?: boolean;
@@ -27,27 +30,24 @@ interface User {
     };
 }
 
-import { PUBLIC_ADMIN_EMAIL } from '$env/static/public';
-
-// Admin email for dev/admin features
-
 class AuthStore {
     // Internal state
     #token = $state('');
     #user = $state<User | null>(null);
+    #loading = $state(false);
+    #wasBanned = $state(false);
+    #banReason = $state<string | null>(null);
 
     constructor() {
         if (browser) {
-            const storedToken = localStorage.getItem('auth_token');
-            const storedUser = localStorage.getItem('auth_user');
+            // Clean up legacy auth_user data (no longer used)
+            localStorage.removeItem('auth_user');
 
-            if (storedToken) this.#token = storedToken;
-            if (storedUser) {
-                try {
-                    this.#user = JSON.parse(storedUser);
-                } catch {
-                    this.#user = null;
-                }
+            const storedToken = localStorage.getItem('auth_token');
+            if (storedToken) {
+                this.#token = storedToken;
+                // Fetch user info with the stored token
+                this.fetchMe();
             }
         }
     }
@@ -66,7 +66,89 @@ class AuthStore {
     }
 
     get isAdmin() {
-        return this.#user?.email === PUBLIC_ADMIN_EMAIL;
+        return this.#user?.isAdmin ?? false;
+    }
+
+    get loading() {
+        return this.#loading;
+    }
+
+    get wasBanned() {
+        return this.#wasBanned;
+    }
+
+    get banReason() {
+        return this.#banReason;
+    }
+
+    // Clear the banned state (call after showing the message to the user)
+    clearBannedState() {
+        this.#wasBanned = false;
+        this.#banReason = null;
+    }
+
+    // Fetch user info using the token
+    async fetchMe(): Promise<User | null> {
+        if (!this.#token) return null;
+
+        this.#loading = true;
+        try {
+            const response = await fetch('/api/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.#token}`
+                },
+                body: JSON.stringify({
+                    query: `query Me {
+                        me {
+                            id
+                            firstName
+                            lastName
+                            secondLastName
+                            fullName
+                            email
+                            profilePicture
+                            language
+                            theme
+                            phone
+                            phoneCountryCode
+                            phoneVerified
+                            emailVerified
+                            isAdmin
+                            isBeta
+                            betaAgreedAt
+                        }
+                    }`
+                })
+            });
+
+            const result = await response.json();
+
+            // Check if user is banned
+            if (result.errors?.some((e: any) => e.extensions?.code === 'USER_BANNED')) {
+                const bannedError = result.errors.find((e: any) => e.extensions?.code === 'USER_BANNED');
+                this.#wasBanned = true;
+                this.#banReason = bannedError?.message || 'Your account has been suspended';
+                this.logout();
+                return null;
+            }
+
+            if (result.data?.me) {
+                this.#user = result.data.me;
+                return this.#user;
+            } else {
+                // Token is invalid, clear it
+                this.logout();
+                return null;
+            }
+        } catch (error) {
+            console.error('Failed to fetch user info:', error);
+            this.logout();
+            return null;
+        } finally {
+            this.#loading = false;
+        }
     }
 
     // Actions
@@ -75,8 +157,8 @@ class AuthStore {
         this.#user = user;
 
         if (browser) {
+            // Only save the token, not the user info
             localStorage.setItem('auth_token', token);
-            localStorage.setItem('auth_user', JSON.stringify(user));
         }
     }
 
@@ -86,7 +168,6 @@ class AuthStore {
 
         if (browser) {
             localStorage.removeItem('auth_token');
-            localStorage.removeItem('auth_user');
         }
     }
 
@@ -97,10 +178,6 @@ class AuthStore {
             ...this.#user,
             ...patch
         };
-
-        if (browser) {
-            localStorage.setItem('auth_user', JSON.stringify(this.#user));
-        }
     }
 }
 

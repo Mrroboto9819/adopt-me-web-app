@@ -14,20 +14,30 @@ const yoga = createYoga<RequestEvent>({
     fetchAPI: { Response },
     context: async ({ request }) => {
         const authHeader = request.headers.get('Authorization');
-        if (!authHeader) return { user: null };
+        if (!authHeader) return { user: null, isBanned: false };
 
         const token = authHeader.split(' ')[1]; // Bearer <token>
-        if (!token) return { user: null };
+        if (!token) return { user: null, isBanned: false };
 
         try {
             const payload = verifyToken(token);
-            if (!payload) return { user: null };
+            if (!payload) return { user: null, isBanned: false };
 
             const user = await User.findById(payload.userId);
-            return { user };
+
+            // Check if user is banned - return banned context so resolvers can handle it
+            if (user && user.isBanned) {
+                return {
+                    user: null,
+                    isBanned: true,
+                    banReason: user.banReason || 'Your account has been suspended'
+                };
+            }
+
+            return { user, isBanned: false };
         } catch (error) {
             console.error('Auth context error:', error);
-            return { user: null };
+            return { user: null, isBanned: false };
         }
     }
 });

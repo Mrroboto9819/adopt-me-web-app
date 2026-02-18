@@ -176,7 +176,7 @@
     }
 </script>
 
-<Modal bind:open onClose={onClose} maxWidth="max-w-3xl">
+<Modal bind:open onClose={onClose} maxWidth="max-w-3xl" hideHeader={true} noPadding={true}>
     {#if report}
         <div class="p-6">
             <!-- Header -->

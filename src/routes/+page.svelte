@@ -28,7 +28,13 @@
         Search,
         FileText,
         XCircle,
+        AlertTriangle,
+        Bug,
+        Trash2,
+        X,
+        Sparkles,
     } from "lucide-svelte";
+    import { browser } from "$app/environment";
 
     let posts = $state<any[]>([]);
     let loading = $state(true);
@@ -40,6 +46,70 @@
     let observerTarget = $state<HTMLElement | null>(null);
     let showCreateModal = $state(false);
     let lastUpdated = $state<Date | null>(null);
+    let showBetaWarning = $state(false);
+    let holdProgress = $state(0);
+    let isHolding = $state(false);
+    let holdInterval = $state<ReturnType<typeof setInterval> | null>(null);
+    const HOLD_DURATION = 2000;
+
+    // Check if user has seen the beta warning (from database)
+    function checkBetaWarning() {
+        if (!browser || !auth.user) return;
+        // Check the database field - if not agreed yet, show warning
+        if (!auth.user.betaAgreedAt) {
+            showBetaWarning = true;
+        }
+    }
+
+    async function dismissBetaWarning() {
+        showBetaWarning = false;
+        holdProgress = 0;
+        isHolding = false;
+
+        // Call mutation to save agreement to database
+        try {
+            const response = await fetch("/api/graphql", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${auth.token}`,
+                },
+                body: JSON.stringify({
+                    query: `mutation AcceptBetaTerms {
+                        acceptBetaTerms {
+                            id
+                            betaAgreedAt
+                        }
+                    }`,
+                }),
+            });
+            const result = await response.json();
+            if (result.data?.acceptBetaTerms) {
+                auth.updateUser({ betaAgreedAt: result.data.acceptBetaTerms.betaAgreedAt });
+            }
+        } catch (e) {
+            console.error("Failed to save beta agreement:", e);
+        }
+    }
+
+    function startHold() {
+        isHolding = true;
+        const startTime = Date.now();
+        holdInterval = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            holdProgress = Math.min((elapsed / HOLD_DURATION) * 100, 100);
+            if (holdProgress >= 100) {
+                if (holdInterval) clearInterval(holdInterval);
+                dismissBetaWarning();
+            }
+        }, 16);
+    }
+
+    function stopHold() {
+        isHolding = false;
+        if (holdInterval) clearInterval(holdInterval);
+        if (holdProgress < 100) holdProgress = 0;
+    }
 
     // Element refs for GSAP animations
     let leftSidebarEl: HTMLDivElement | null = $state(null);
@@ -264,6 +334,9 @@
     onMount(async () => {
         await Promise.all([fetchPosts(), fetchSpecies()]);
         loading = false;
+
+        // Check if we need to show beta warning
+        checkBetaWarning();
 
         // Run entrance animations after data loads
         if (!hasAnimated) {
@@ -707,3 +780,93 @@
     onClose={() => (showCreateModal = false)}
     onPostCreated={refreshFeed}
 />
+
+<!-- Beta Warning Modal -->
+{#if showBetaWarning}
+    <div
+        class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+        transition:fade={{ duration: 200 }}
+    >
+        <div class="bg-white dark:bg-gray-800 rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-green-500 to-emerald-500 p-6 text-white">
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                        <Sparkles class="w-6 h-6" />
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-bold">{$_("beta.title")}</h2>
+                        <p class="text-green-100 text-sm">{$_("beta.subtitle")}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="p-6 space-y-4">
+                <!-- Warning Items -->
+                <div class="space-y-3">
+                    <div class="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800">
+                        <AlertTriangle class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <p class="font-semibold text-amber-800 dark:text-amber-200 text-sm">{$_("beta.bugs_title")}</p>
+                            <p class="text-amber-700 dark:text-amber-300 text-xs">{$_("beta.bugs_desc")}</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                        <Bug class="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <p class="font-semibold text-indigo-800 dark:text-indigo-200 text-sm">{$_("beta.report_title")}</p>
+                            <p class="text-indigo-700 dark:text-indigo-300 text-xs">{$_("beta.report_desc")}</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+                        <Trash2 class="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <p class="font-semibold text-red-800 dark:text-red-200 text-sm">{$_("beta.data_title")}</p>
+                            <p class="text-red-700 dark:text-red-300 text-xs">{$_("beta.data_desc")}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Disclaimer -->
+                <p class="text-xs text-gray-500 dark:text-gray-400 text-center">
+                    {$_("beta.disclaimer")}
+                </p>
+            </div>
+
+            <!-- Footer with Hold Button -->
+            <div class="p-6 pt-0">
+                <button
+                    class="relative w-full py-4 rounded-xl font-bold text-white overflow-hidden transition-all select-none {holdProgress >= 100 ? 'bg-green-600' : 'bg-gradient-to-r from-green-500 to-emerald-500'}"
+                    onmousedown={startHold}
+                    onmouseup={stopHold}
+                    onmouseleave={stopHold}
+                    ontouchstart={startHold}
+                    ontouchend={stopHold}
+                >
+                    <!-- Progress bar background -->
+                    <div
+                        class="absolute inset-0 bg-green-600 transition-all duration-75"
+                        style="width: {holdProgress}%"
+                    ></div>
+
+                    <!-- Button text -->
+                    <span class="relative z-10 flex items-center justify-center gap-2">
+                        {#if holdProgress >= 100}
+                            {$_("beta.understood")}
+                        {:else if isHolding}
+                            {$_("beta.hold_to_continue")}
+                        {:else}
+                            {$_("beta.hold_button")}
+                        {/if}
+                    </span>
+                </button>
+                <p class="text-xs text-gray-400 dark:text-gray-500 text-center mt-2">
+                    {$_("beta.hold_hint")}
+                </p>
+            </div>
+        </div>
+    </div>
+{/if}

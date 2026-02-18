@@ -9,12 +9,18 @@
         onClose,
         children,
         footer,
+        maxWidth = "sm:max-w-lg",
+        hideHeader = false,
+        noPadding = false,
     }: {
         open: boolean;
         title?: string;
         onClose: () => void;
         children: Snippet;
         footer?: Snippet;
+        maxWidth?: string;
+        hideHeader?: boolean;
+        noPadding?: boolean;
     } = $props();
 
     // Element refs for GSAP animations
@@ -152,34 +158,36 @@
             <!-- Modal panel (separate for GSAP animation) -->
             <div
                 bind:this={modalPanelEl}
-                class="relative bg-white dark:bg-gray-800 rounded-2xl text-left shadow-2xl sm:my-8 sm:max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden"
+                class="relative bg-white dark:bg-gray-800 rounded-2xl text-left shadow-2xl sm:my-8 {maxWidth} w-full max-h-[90vh] flex flex-col overflow-hidden"
                 style="opacity: 0;"
             >
-                <!-- Header (fixed) -->
-                <div
-                    class="flex justify-between items-center px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/50 flex-shrink-0"
-                >
-                    {#if title}
-                        <h3
-                            class="text-lg font-bold text-gray-900 dark:text-white"
-                            id="modal-title"
-                        >
-                            {title}
-                        </h3>
-                    {:else}
-                        <div></div>
-                    {/if}
-                    <button
-                        onclick={handleClose}
-                        class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        aria-label="Close modal"
+                <!-- Header (fixed) - only show if not hidden -->
+                {#if !hideHeader}
+                    <div
+                        class="flex justify-between items-center px-6 py-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/50 flex-shrink-0"
                     >
-                        <X class="w-5 h-5" />
-                    </button>
-                </div>
+                        {#if title}
+                            <h3
+                                class="text-lg font-bold text-gray-900 dark:text-white"
+                                id="modal-title"
+                            >
+                                {title}
+                            </h3>
+                        {:else}
+                            <div></div>
+                        {/if}
+                        <button
+                            onclick={handleClose}
+                            class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            aria-label="Close modal"
+                        >
+                            <X class="w-5 h-5" />
+                        </button>
+                    </div>
+                {/if}
 
                 <!-- Body (scrollable) -->
-                <div bind:this={modalContentEl} class="px-6 py-6 overflow-y-auto flex-1">
+                <div bind:this={modalContentEl} class="{noPadding ? '' : 'px-6 py-6'} overflow-y-auto flex-1">
                     {@render children()}
                 </div>
 

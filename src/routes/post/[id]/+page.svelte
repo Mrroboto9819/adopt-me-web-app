@@ -26,9 +26,10 @@
     } from "lucide-svelte";
     import VideoPlayer from "$lib/components/VideoPlayer.svelte";
     import ReportPostModal from "$lib/components/ReportPostModal.svelte";
+    import ReportUserModal from "$lib/components/ReportUserModal.svelte";
     import EditPostModal from "$lib/components/EditPostModal.svelte";
     import DeletePostModal from "$lib/components/DeletePostModal.svelte";
-    import { Pencil, Trash2 } from "lucide-svelte";
+    import { Pencil, Trash2, UserX } from "lucide-svelte";
     import { goto } from "$app/navigation";
 
     let post = $state<any>(null);
@@ -46,6 +47,7 @@
 
     // Report modal state
     let showReportModal = $state(false);
+    let showReportUserModal = $state(false);
     let showEditModal = $state(false);
     let showDeleteModal = $state(false);
 
@@ -641,6 +643,13 @@
                             >
                                 <Flag class="w-5 h-5 text-gray-400 group-hover:text-red-500" />
                             </button>
+                            <button
+                                onclick={() => showReportUserModal = true}
+                                class="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-full transition-colors group"
+                                title={$_("user_report.title")}
+                            >
+                                <UserX class="w-5 h-5 text-gray-400 group-hover:text-orange-500" />
+                            </button>
                         {/if}
                     </div>
                 </div>
@@ -1126,6 +1135,14 @@
         bind:open={showReportModal}
         postId={post.id}
         onClose={() => showReportModal = false}
+    />
+
+    <!-- Report User Modal -->
+    <ReportUserModal
+        bind:open={showReportUserModal}
+        userId={post.author.id}
+        userName={post.author.fullName}
+        onClose={() => showReportUserModal = false}
     />
 
     <!-- Edit Post Modal -->

@@ -4,6 +4,7 @@
     import { goto } from "$app/navigation";
     import { Home, ArrowLeft } from "lucide-svelte";
     import { _ } from "$lib/i18n";
+    import AdminNavbar from "$lib/components/AdminNavbar.svelte";
 
     let { children } = $props();
 
@@ -11,14 +12,24 @@
     let isLoading = $state(true);
     let show404 = $state(false);
 
-    onMount(() => {
-        // Wait a tick for auth to hydrate from localStorage
-        setTimeout(() => {
-            if (!auth.isAdmin) {
-                show404 = true;
-            }
-            isLoading = false;
-        }, 100);
+    onMount(async () => {
+        // Wait for auth to finish loading user info from token
+        if (auth.loading) {
+            // Wait for fetchMe to complete
+            await new Promise<void>((resolve) => {
+                const checkLoading = setInterval(() => {
+                    if (!auth.loading) {
+                        clearInterval(checkLoading);
+                        resolve();
+                    }
+                }, 50);
+            });
+        }
+
+        if (!auth.isAdmin) {
+            show404 = true;
+        }
+        isLoading = false;
     });
 
     // Watch for auth changes (e.g., logout)
@@ -89,6 +100,11 @@
         <div class="absolute bottom-1/4 right-1/4 w-64 h-64 bg-purple-200 dark:bg-purple-900/20 rounded-full blur-3xl opacity-30 -z-10"></div>
     </div>
 {:else}
-    <!-- Admin content - render child pages -->
-    {@render children()}
+    <!-- Admin content -->
+    <div class="min-h-screen bg-gray-950">
+        <AdminNavbar />
+        <main class="max-w-7xl mx-auto px-4 py-6">
+            {@render children()}
+        </main>
+    </div>
 {/if}

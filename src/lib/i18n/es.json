@@ -47,6 +47,21 @@
         "days_ago": "hace {count}d",
         "weeks_ago": "hace {count}s"
     },
+    "beta": {
+        "title": "¡Bienvenido a la Beta Abierta!",
+        "subtitle": "Gracias por ser un usuario temprano",
+        "bugs_title": "Pueden Ocurrir Errores",
+        "bugs_desc": "Esta es una versión beta de AdoptMe. Puedes encontrar errores inesperados, bugs o funciones incompletas mientras continuamos desarrollando y mejorando la plataforma.",
+        "report_title": "Ayúdanos a Mejorar",
+        "report_desc": "¿Encontraste un bug? Usa el botón de reportar bug en la esquina inferior derecha de tu pantalla para avisarnos. ¡Tu feedback es invaluable!",
+        "data_title": "Los Datos Pueden Reiniciarse",
+        "data_desc": "Las publicaciones, imágenes y otro contenido creado durante el período beta pueden ser eliminados o reiniciados cuando lancemos la versión oficial.",
+        "disclaimer": "Al continuar, reconoces que esta es una versión beta y aceptas estas condiciones.",
+        "hold_button": "Mantén presionado para Aceptar",
+        "hold_to_continue": "Sigue presionando...",
+        "hold_hint": "Mantén el botón presionado por 2 segundos para continuar",
+        "understood": "¡Entendido!"
+    },
     "nav": {
         "home": "Inicio",
         "feed": "Inicio",
@@ -66,7 +81,8 @@
         "add_verify_contacts": "Verifica tu correo y teléfono para desbloquear todas las funciones",
         "verify_now": "Completar Ahora",
         "support_message": "Ayúdanos a mantener AdoptMe gratis",
-        "buy_coffee": "Invítanos un café"
+        "buy_coffee": "Invítanos un café",
+        "admin_panel": "Panel de Admin"
     },
     "home": {
         "title": "Inicio - Encuentra Mascotas en Adopción",
@@ -165,6 +181,38 @@
         "reason_animal_abuse_desc": "Contenido que muestra crueldad o negligencia animal",
         "reason_fake_listing": "Listado Falso",
         "reason_fake_listing_desc": "Información falsa o engañosa sobre mascotas",
+        "reason_other": "Otro",
+        "reason_other_desc": "Algo más no listado aquí"
+    },
+    "user_report": {
+        "title": "Reportar Usuario",
+        "subtitle": "Ayúdanos a entender el problema con",
+        "why_reporting": "¿Por qué reportas a este usuario?",
+        "select_all": "Selecciona todas las que apliquen",
+        "additional_details": "Detalles adicionales",
+        "additional_placeholder": "Proporciona cualquier contexto adicional que pueda ayudarnos a revisar este reporte...",
+        "warning": "Los reportes falsos pueden resultar en acciones contra tu cuenta. Por favor, solo reporta preocupaciones genuinas.",
+        "submit_report": "Enviar Reporte",
+        "select_reason": "Por favor selecciona al menos una razón para el reporte",
+        "must_login": "Debes iniciar sesión para reportar a un usuario",
+        "success": "Reporte enviado exitosamente. Gracias por ayudar a mantener nuestra comunidad segura.",
+        "failed": "Error al enviar el reporte",
+        "reason_harassment": "Acoso",
+        "reason_harassment_desc": "Intimidación o comportamiento amenazante",
+        "reason_spam": "Spam",
+        "reason_spam_desc": "Envío de mensajes no solicitados o repetitivos",
+        "reason_scam": "Estafa / Fraude",
+        "reason_scam_desc": "Actividad engañosa o fraudulenta",
+        "reason_fake_profile": "Perfil Falso",
+        "reason_fake_profile_desc": "Perfil con información falsa o engañosa",
+        "reason_impersonation": "Suplantación de Identidad",
+        "reason_impersonation_desc": "Hacerse pasar por otra persona",
+        "reason_inappropriate": "Contenido Inapropiado",
+        "reason_inappropriate_desc": "Publicar material ofensivo o inadecuado",
+        "reason_animal_abuse": "Maltrato Animal",
+        "reason_animal_abuse_desc": "Evidencia de crueldad o negligencia animal",
+        "reason_threats": "Amenazas",
+        "reason_threats_desc": "Hacer amenazas de violencia o daño",
         "reason_other": "Otro",
         "reason_other_desc": "Algo más no listado aquí"
     },
@@ -499,7 +547,9 @@
         "terms_of_service": "Términos de Servicio",
         "and": "y la",
         "privacy_policy": "Política de Privacidad",
-        "must_agree_terms": "Debes aceptar los Términos de Servicio y la Política de Privacidad para continuar"
+        "must_agree_terms": "Debes aceptar los Términos de Servicio y la Política de Privacidad para continuar",
+        "account_suspended": "Tu cuenta ha sido suspendida. Por favor contacta a soporte para más información.",
+        "account_banned": "Tu cuenta ha sido baneada"
     },
     "privacy": {
         "seo_title": "Política de Privacidad",
@@ -1052,12 +1102,18 @@
         "back_to_login": "Volver al inicio de sesión"
     },
     "admin": {
-        "dashboard": "Panel de Administración",
+        "back_to_site": "Volver al Sitio",
+        "invites": "Invitaciones",
+        "dashboard": "Panel",
         "welcome_back": "Bienvenido de vuelta, {name}",
+        "users": "Usuarios",
+        "users_desc": "Gestionar cuentas de usuarios, advertencias y suspensiones",
         "bug_reports": "Reportes de Errores",
         "bug_reports_desc": "Gestionar reportes de errores y solicitudes de funciones",
         "post_reports": "Reportes de Publicaciones",
         "post_reports_desc": "Revisar publicaciones reportadas y tomar acción",
+        "user_reports": "Reportes de Usuarios",
+        "user_reports_desc": "Revisar usuarios reportados y tomar acción",
         "beta_invites": "Invitaciones Beta",
         "send_invites": "Enviar correos de invitación",
         "quick_actions": "Acciones Rápidas",

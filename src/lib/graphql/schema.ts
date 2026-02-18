@@ -9,6 +9,7 @@ import { PostVote } from '$lib/models/PostVote';
 import { Comment } from '$lib/models/Comment';
 import { Report } from '$lib/models/Report';
 import { BugReport } from '$lib/models/BugReport';
+import { UserReport } from '$lib/models/UserReport';
 import { LoginImage } from '$lib/models/LoginImage';
 import { signToken } from '$lib/auth';
 import type { IPet } from '$lib/models/Pet';
@@ -105,6 +106,11 @@ const typeDefs = `
     # Saved Posts
     savedPostsCount: Int!
     likedPostsCount: Int!
+    # Admin flag (computed from email)
+    isAdmin: Boolean!
+    # Beta tester flag
+    isBeta: Boolean!
+    betaAgreedAt: String
   }
 
   type NotificationSettings {
@@ -322,6 +328,32 @@ const typeDefs = `
     updatedAt: String!
   }
 
+  enum UserReportReason {
+    harassment
+    spam
+    scam
+    fake_profile
+    impersonation
+    inappropriate_content
+    animal_abuse
+    threats
+    other
+  }
+
+  type UserReport {
+    id: ID!
+    reasons: [UserReportReason!]!
+    description: String
+    reporter: User!
+    reportedUser: User!
+    status: ReportStatus!
+    adminNotes: String
+    reviewedBy: User
+    reviewedAt: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
   enum BugReportCategory {
     bug
     feature
@@ -367,6 +399,8 @@ const typeDefs = `
     totalBugReports: Int!
     pendingPostReports: Int!
     totalPostReports: Int!
+    pendingUserReports: Int!
+    totalUserReports: Int!
   }
 
   type DiskStats {
@@ -389,6 +423,39 @@ const typeDefs = `
     order: Int!
     isActive: Boolean!
     createdAt: String!
+  }
+
+  # Admin Statistics
+  type StatCount {
+    label: String!
+    value: Int!
+    color: String
+  }
+
+  type AdminStats {
+    # Totals
+    totalUsers: Int!
+    totalPosts: Int!
+    totalPets: Int!
+    totalComments: Int!
+
+    # Posts by type
+    postsByType: [StatCount!]!
+
+    # Pets by status
+    petsByStatus: [StatCount!]!
+
+    # Pets by species (top 5)
+    petsBySpecies: [StatCount!]!
+
+    # Recent activity (last 7 days)
+    recentUsers: Int!
+    recentPosts: Int!
+    recentPets: Int!
+
+    # Growth (last 30 days)
+    usersLast30Days: Int!
+    postsLast30Days: Int!
   }
 
   type PageInfo {
@@ -437,6 +504,11 @@ const typeDefs = `
     adminReport(id: ID!): Report
     adminReportCounts: AdminReportCounts!
     adminDiskStats: DiskStats!
+    adminStats: AdminStats!
+    adminUsers(search: String, isBanned: Boolean, isActive: Boolean, limit: Int = 50, offset: Int = 0): [User!]!
+    adminUser(id: ID!): User
+    adminUserReports(status: ReportStatus, reason: UserReportReason, limit: Int = 50, offset: Int = 0): [UserReport!]!
+    adminUserReport(id: ID!): UserReport
   }
 
   type Mutation {
@@ -468,9 +540,11 @@ const typeDefs = `
 
     # Account Mutations
     deleteAccount: Boolean!
+    acceptBetaTerms: User!
 
     # Report Mutations
     reportPost(postId: ID!, reasons: [ReportReason!]!, description: String): Report!
+    reportUser(userId: ID!, reasons: [UserReportReason!]!, description: String): UserReport!
 
     # Bug Report Mutations
     submitBugReport(title: String!, description: String!, category: BugReportCategory!, severity: BugReportSeverity!, page: String, browser: String, device: String, screenshot: String, reporterEmail: String): BugReport!
@@ -506,11 +580,27 @@ const typeDefs = `
     # Admin Post Report Mutations
     updateReport(id: ID!, status: ReportStatus, adminNotes: String): Report!
     deleteReport(id: ID!): Boolean!
+
+    # Admin User Report Mutations
+    updateUserReport(id: ID!, status: ReportStatus, adminNotes: String): UserReport!
+    deleteUserReport(id: ID!): Boolean!
+
+    # Admin User Mutations
+    adminBanUser(id: ID!, reason: String): User!
+    adminUnbanUser(id: ID!): User!
+    adminWarnUser(id: ID!, reason: String!, reportId: ID): User!
+    adminRemoveWarning(userId: ID!, warningId: ID!): User!
+
+    # Admin Post Mutations
+    adminDisablePost(id: ID!, reason: String): Post!
+    adminEnablePost(id: ID!): Post!
   }
 `;
 
 interface Context {
   user: IUser | null;
+  isBanned?: boolean;
+  banReason?: string;
 }
 
 interface AddressArgs {
@@ -1129,6 +1219,12 @@ const resolvers = {
       };
     },
     me: async (_: unknown, __: unknown, context: Context) => {
+      // Check if user is banned - throw special error that frontend can handle
+      if (context.isBanned) {
+        throw new GraphQLError(context.banReason || 'Your account has been suspended', {
+          extensions: { code: 'USER_BANNED' }
+        });
+      }
       return context.user;
     },
     species: async () => {
@@ -1358,18 +1454,22 @@ const resolvers = {
       if (!context.user) throw new GraphQLError('Unauthorized');
       if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
 
-      const [pendingBugReports, totalBugReports, pendingPostReports, totalPostReports] = await Promise.all([
+      const [pendingBugReports, totalBugReports, pendingPostReports, totalPostReports, pendingUserReports, totalUserReports] = await Promise.all([
         BugReport.countDocuments({ status: 'open' }),
         BugReport.countDocuments({}),
         Report.countDocuments({ status: 'pending' }),
-        Report.countDocuments({})
+        Report.countDocuments({}),
+        UserReport.countDocuments({ status: 'pending' }),
+        UserReport.countDocuments({})
       ]);
 
       return {
         pendingBugReports,
         totalBugReports,
         pendingPostReports,
-        totalPostReports
+        totalPostReports,
+        pendingUserReports,
+        totalUserReports
       };
     },
 
@@ -1520,6 +1620,180 @@ const resolvers = {
         diskFreeFormatted: formatBytes(diskFree),
         diskUsedFormatted: formatBytes(diskUsed),
       };
+    },
+
+    adminStats: async (_: unknown, __: unknown, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Fetch all counts in parallel
+      const [
+        totalUsers,
+        totalPosts,
+        totalPets,
+        totalComments,
+        adoptPosts,
+        missingPosts,
+        regularPosts,
+        availablePets,
+        adoptedPets,
+        pendingPets,
+        recentUsers,
+        recentPosts,
+        recentPets,
+        usersLast30Days,
+        postsLast30Days,
+        speciesWithPets
+      ] = await Promise.all([
+        User.countDocuments({ isActive: true }),
+        Post.countDocuments({ isActive: true }),
+        Pet.countDocuments({ isActive: true }),
+        Comment.countDocuments({ isActive: true }),
+        Post.countDocuments({ isActive: true, postType: 'adopt' }),
+        Post.countDocuments({ isActive: true, postType: 'missing' }),
+        Post.countDocuments({ isActive: true, postType: 'post' }),
+        Pet.countDocuments({ isActive: true, status: 'available' }),
+        Pet.countDocuments({ isActive: true, status: 'adopted' }),
+        Pet.countDocuments({ isActive: true, status: 'pending' }),
+        User.countDocuments({ isActive: true, createdAt: { $gte: sevenDaysAgo } }),
+        Post.countDocuments({ isActive: true, createdAt: { $gte: sevenDaysAgo } }),
+        Pet.countDocuments({ isActive: true, createdAt: { $gte: sevenDaysAgo } }),
+        User.countDocuments({ isActive: true, createdAt: { $gte: thirtyDaysAgo } }),
+        Post.countDocuments({ isActive: true, createdAt: { $gte: thirtyDaysAgo } }),
+        Pet.aggregate([
+          { $match: { isActive: true, species: { $ne: null } } },
+          { $group: { _id: '$species', count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $limit: 5 },
+          { $lookup: { from: 'species', localField: '_id', foreignField: '_id', as: 'speciesInfo' } },
+          { $unwind: { path: '$speciesInfo', preserveNullAndEmptyArrays: true } }
+        ])
+      ]);
+
+      // Colors for charts
+      const postTypeColors = { adopt: '#22c55e', missing: '#ef4444', post: '#8b5cf6' };
+      const petStatusColors = { available: '#22c55e', adopted: '#3b82f6', pending: '#f59e0b' };
+      const speciesColors = ['#8b5cf6', '#ec4899', '#f59e0b', '#22c55e', '#3b82f6'];
+
+      return {
+        totalUsers,
+        totalPosts,
+        totalPets,
+        totalComments,
+        postsByType: [
+          { label: 'Adoption', value: adoptPosts, color: postTypeColors.adopt },
+          { label: 'Missing', value: missingPosts, color: postTypeColors.missing },
+          { label: 'General', value: regularPosts, color: postTypeColors.post },
+        ],
+        petsByStatus: [
+          { label: 'Available', value: availablePets, color: petStatusColors.available },
+          { label: 'Adopted', value: adoptedPets, color: petStatusColors.adopted },
+          { label: 'Pending', value: pendingPets, color: petStatusColors.pending },
+        ],
+        petsBySpecies: speciesWithPets.map((s: any, i: number) => ({
+          label: s.speciesInfo?.label || s.speciesInfo?.name || 'Unknown',
+          value: s.count,
+          color: speciesColors[i % speciesColors.length],
+        })),
+        recentUsers,
+        recentPosts,
+        recentPets,
+        usersLast30Days,
+        postsLast30Days,
+      };
+    },
+
+    adminUsers: async (
+      _: unknown,
+      { search, isBanned, isActive, limit = 50, offset = 0 }: {
+        search?: string;
+        isBanned?: boolean;
+        isActive?: boolean;
+        limit?: number;
+        offset?: number;
+      },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const query: any = {};
+
+      // Apply filters
+      if (typeof isBanned === 'boolean') {
+        query.isBanned = isBanned;
+      }
+      if (typeof isActive === 'boolean') {
+        query.isActive = isActive;
+      }
+
+      // Apply search if provided
+      if (search && search.trim()) {
+        const searchRegex = new RegExp(search.trim(), 'i');
+        query.$or = [
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { email: searchRegex },
+        ];
+      }
+
+      return await User.find(query)
+        .sort({ createdAt: -1 })
+        .skip(offset)
+        .limit(limit);
+    },
+
+    adminUser: async (
+      _: unknown,
+      { id }: { id: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      return await User.findById(id);
+    },
+
+    adminUserReports: async (
+      _: unknown,
+      { status, reason, limit = 50, offset = 0 }: { status?: string; reason?: string; limit?: number; offset?: number },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const filter: Record<string, unknown> = {};
+      if (status) filter.status = status;
+      if (reason) filter.reasons = reason;
+
+      return await UserReport.find(filter)
+        .populate('reporter')
+        .populate('reportedUser')
+        .populate('reviewedBy')
+        .limit(limit)
+        .skip(offset)
+        .sort({ createdAt: -1 });
+    },
+
+    adminUserReport: async (
+      _: unknown,
+      { id }: { id: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await UserReport.findById(id)
+        .populate('reporter')
+        .populate('reportedUser')
+        .populate('reviewedBy');
+
+      if (!report) throw new GraphQLError('User report not found');
+      return report;
     }
   },
   Mutation: {
@@ -2212,6 +2486,19 @@ const resolvers = {
       return true;
     },
 
+    acceptBetaTerms: async (_: unknown, __: unknown, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+
+      const user = await User.findByIdAndUpdate(
+        context.user._id,
+        { betaAgreedAt: new Date() },
+        { new: true }
+      );
+
+      if (!user) throw new GraphQLError('User not found');
+      return user;
+    },
+
     reportPost: async (_: unknown, { postId, reasons, description }: ReportPostArgs, context: Context) => {
       if (!context.user) throw new GraphQLError('Unauthorized');
 
@@ -2255,6 +2542,49 @@ const resolvers = {
         .populate('reporter')
         .populate('post')
         .populate('postOwner');
+    },
+
+    reportUser: async (_: unknown, { userId, reasons, description }: { userId: string; reasons: string[]; description?: string }, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+
+      // Validate at least one reason is provided
+      if (!reasons || reasons.length === 0) {
+        throw new GraphQLError('At least one reason must be selected');
+      }
+
+      // Check if user exists and is active
+      const reportedUser = await User.findOne({ _id: userId, isActive: true });
+      if (!reportedUser) throw new GraphQLError('User not found');
+
+      // Cannot report yourself
+      if (userId === context.user._id.toString()) {
+        throw new GraphQLError('You cannot report yourself');
+      }
+
+      // Check if user already reported this user
+      const existingReport = await UserReport.findOne({
+        reportedUser: userId,
+        reporter: context.user._id
+      });
+      if (existingReport) {
+        throw new GraphQLError('You have already reported this user');
+      }
+
+      // Create the report with sanitized description
+      const newReport = new UserReport({
+        reasons,
+        description: sanitizeDescription(description),
+        reporter: context.user._id,
+        reportedUser: userId,
+        status: 'pending'
+      });
+
+      const savedReport = await newReport.save();
+
+      // Return with populated fields
+      return await UserReport.findById(savedReport._id)
+        .populate('reporter')
+        .populate('reportedUser');
     },
 
     submitBugReport: async (_: unknown, args: SubmitBugReportArgs, context: Context) => {
@@ -2812,6 +3142,180 @@ const resolvers = {
 
       await Report.findByIdAndDelete(id);
       return true;
+    },
+
+    // Admin User Report Mutations
+    updateUserReport: async (
+      _: unknown,
+      { id, status, adminNotes }: { id: string; status?: string; adminNotes?: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await UserReport.findById(id);
+      if (!report) throw new GraphQLError('User report not found');
+
+      if (status) {
+        report.status = status as 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+        if (status === 'reviewed' || status === 'resolved' || status === 'dismissed') {
+          report.reviewedBy = context.user._id;
+          report.reviewedAt = new Date();
+        }
+      }
+      if (adminNotes !== undefined) {
+        report.adminNotes = sanitizeDescription(adminNotes);
+      }
+
+      const updatedReport = await report.save();
+
+      return await UserReport.findById(updatedReport._id)
+        .populate('reporter')
+        .populate('reportedUser')
+        .populate('reviewedBy');
+    },
+
+    deleteUserReport: async (_: unknown, { id }: { id: string }, context: Context) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const report = await UserReport.findById(id);
+      if (!report) throw new GraphQLError('User report not found');
+
+      await UserReport.findByIdAndDelete(id);
+      return true;
+    },
+
+    // Admin User Mutations
+    adminBanUser: async (
+      _: unknown,
+      { id, reason }: { id: string; reason?: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const user = await User.findById(id);
+      if (!user) throw new GraphQLError('User not found');
+
+      // Cannot ban admin
+      if (isAdmin(user)) throw new GraphQLError('Cannot ban admin users');
+
+      user.isBanned = true;
+      user.banReason = reason ? sanitizeText(reason) : 'Banned by administrator';
+
+      return await user.save();
+    },
+
+    adminUnbanUser: async (
+      _: unknown,
+      { id }: { id: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const user = await User.findById(id);
+      if (!user) throw new GraphQLError('User not found');
+
+      user.isBanned = false;
+      user.banReason = undefined;
+
+      return await user.save();
+    },
+
+    adminWarnUser: async (
+      _: unknown,
+      { id, reason, reportId }: { id: string; reason: string; reportId?: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const user = await User.findById(id);
+      if (!user) throw new GraphQLError('User not found');
+
+      // Cannot warn admin
+      if (isAdmin(user)) throw new GraphQLError('Cannot warn admin users');
+
+      // Initialize warnings array if not present
+      if (!user.warnings) {
+        user.warnings = [];
+      }
+
+      // Add warning
+      user.warnings.push({
+        reason: sanitizeText(reason),
+        reportId: reportId || undefined,
+        issuedBy: context.user._id,
+        issuedAt: new Date(),
+        acknowledged: false,
+      });
+
+      // Update warning count
+      user.warningCount = user.warnings.length;
+
+      return await user.save();
+    },
+
+    adminRemoveWarning: async (
+      _: unknown,
+      { userId, warningId }: { userId: string; warningId: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const user = await User.findById(userId);
+      if (!user) throw new GraphQLError('User not found');
+
+      if (!user.warnings || user.warnings.length === 0) {
+        throw new GraphQLError('Warning not found');
+      }
+
+      // Remove the warning
+      user.warnings = user.warnings.filter((w: any) => w._id?.toString() !== warningId);
+      user.warningCount = user.warnings.length;
+
+      return await user.save();
+    },
+
+    // Admin Post Mutations
+    adminDisablePost: async (
+      _: unknown,
+      { id, reason }: { id: string; reason?: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const post = await Post.findById(id);
+      if (!post) throw new GraphQLError('Post not found');
+
+      post.isActive = false;
+      // Store admin note about disabling
+      if (reason) {
+        post.adminNote = sanitizeText(reason);
+      }
+
+      return await post.save();
+    },
+
+    adminEnablePost: async (
+      _: unknown,
+      { id }: { id: string },
+      context: Context
+    ) => {
+      if (!context.user) throw new GraphQLError('Unauthorized');
+      if (!isAdmin(context.user)) throw new GraphQLError('Admin access required');
+
+      const post = await Post.findById(id);
+      if (!post) throw new GraphQLError('Post not found');
+
+      post.isActive = true;
+      post.adminNote = undefined;
+
+      return await post.save();
     }
   },
   Post: {
@@ -2980,6 +3484,15 @@ const resolvers = {
       const parts = [parent.firstName, parent.lastName];
       if (parent.secondLastName) parts.push(parent.secondLastName);
       return parts.join(' ');
+    },
+    isAdmin: (parent: IUser) => {
+      return parent.email === ADMIN_EMAIL;
+    },
+    isBeta: (parent: IUser) => {
+      return parent.isBeta ?? true; // Default to true for existing users
+    },
+    betaAgreedAt: (parent: IUser) => {
+      return parent.betaAgreedAt ? parent.betaAgreedAt.toISOString() : null;
     },
     posts: async (parent: IUser) => {
       return await Post.find({ author: parent._id, isActive: true });

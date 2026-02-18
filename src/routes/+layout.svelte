@@ -8,19 +8,22 @@
 	import SEO from "$lib/components/SEO.svelte";
 	import FloatingBugButton from "$lib/components/FloatingBugButton.svelte";
 	import "$lib/i18n"; // Initialize i18n
-	import { locale } from "svelte-i18n";
+	import { locale, _ } from "svelte-i18n";
 	import { auth } from "$lib/stores/auth.svelte";
 	import { theme } from "$lib/stores/theme.svelte";
+	import { toast } from "$lib/stores/toast.svelte";
 	import { onMount } from "svelte";
 	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
+	import { PUBLIC_ADSENSE_CLIENT_ID } from "$env/static/public";
 
 	let { children } = $props();
 
-	// Hide navbar and footer on login page
-	let isLoginPage = $derived($page.url.pathname === "/login");
-
-	// Replace with your actual Google AdSense publisher ID
-	const ADSENSE_CLIENT_ID = "ca-pub-XXXXXXXXXXXXXXXX";
+	// Hide navbar and footer on login page and admin pages (admin has its own navbar)
+	let hideNavFooter = $derived(
+		$page.url.pathname === "/login" ||
+			$page.url.pathname.startsWith("/admin"),
+	);
 
 	import { isLoading } from "svelte-i18n";
 
@@ -35,6 +38,17 @@
 		// Load theme from user data (for page refresh when already logged in)
 		if (user && user.theme) {
 			theme.loadFromUser(user.theme);
+		}
+	});
+
+	// Watch for banned user state and show message
+	$effect(() => {
+		if (auth.wasBanned) {
+			const reason = auth.banReason || $_("auth.account_suspended");
+			toast.error(reason, 10000); // Show for 10 seconds
+			auth.clearBannedState();
+			// Redirect to login page
+			goto("/login");
 		}
 	});
 </script>
@@ -55,7 +69,7 @@
 	<!-- Google AdSense -->
 	<script
 		async
-		src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={ADSENSE_CLIENT_ID}"
+		src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={PUBLIC_ADSENSE_CLIENT_ID}"
 		crossorigin="anonymous"
 	></script>
 
@@ -80,25 +94,25 @@
 	<div
 		class="min-h-screen flex flex-col bg-white dark:bg-gray-900 transition-colors duration-200"
 	>
-		{#if !isLoginPage}
+		{#if !hideNavFooter}
 			<Navbar />
 		{/if}
 		<main class="flex-1">
 			{@render children()}
 		</main>
-		{#if !isLoginPage}
+		{#if !hideNavFooter}
 			<Footer />
 		{/if}
 	</div>
 	<ToastContainer />
-	<GlobalLoader />
 
+	<GlobalLoader />
 	<!-- Version Badge -->
 	<div class="fixed bottom-4 left-4 z-40 pointer-events-none">
 		<span
 			class="text-xs font-medium text-gray-400 dark:text-gray-600 select-none"
 		>
-			v1.0.0 Open Alpha
+			v1.0.0 Open Beta
 		</span>
 	</div>
 

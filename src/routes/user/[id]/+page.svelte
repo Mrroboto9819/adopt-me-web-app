@@ -6,9 +6,10 @@
     import { goto } from "$app/navigation";
     import SEO from "$lib/components/SEO.svelte";
     import PostCard from "$lib/components/PostCard.svelte";
-    import { FileText, BadgeCheck, PawPrint, Mail, Phone, MapPin, Calendar, Globe } from "lucide-svelte";
+    import { FileText, BadgeCheck, PawPrint, Mail, Phone, MapPin, Calendar, Globe, Flag } from "lucide-svelte";
     import { _ } from "svelte-i18n";
     import gsap from "gsap";
+    import ReportUserModal from "$lib/components/ReportUserModal.svelte";
 
     // Helper function to strip HTML tags for preview text
     function stripHtml(html: string): string {
@@ -25,6 +26,7 @@
     let loadingPets = $state(false);
     let activeTab = $state<"posts" | "pets">("posts");
     let error = $state("");
+    let showReportUserModal = $state(false);
 
     // Verification banner visibility (same logic as Navbar)
     let needsEmailVerification = $derived(auth.user && (!auth.user.email || !auth.user.emailVerified));
@@ -460,6 +462,17 @@
                             Member since {formatDate(user.createdAt)}
                         </p>
                     </div>
+
+                    <!-- Report User Button -->
+                    {#if auth.user && auth.user.id !== user.id}
+                        <button
+                            onclick={() => showReportUserModal = true}
+                            class="self-start sm:self-end p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            title={$_("user_report.title")}
+                        >
+                            <Flag class="w-5 h-5" />
+                        </button>
+                    {/if}
                 </div>
             </div>
 
@@ -699,3 +712,13 @@
         </div>
     {/if}
 </div>
+
+<!-- Report User Modal -->
+{#if user}
+    <ReportUserModal
+        bind:open={showReportUserModal}
+        userId={user.id}
+        userName={user.fullName}
+        onClose={() => showReportUserModal = false}
+    />
+{/if}
