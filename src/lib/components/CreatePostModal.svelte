@@ -46,7 +46,7 @@
     let postType = $state<PostType>("post");
     let reportType = $state<ReportType | null>(null);
     let preferredContact = $state<PreferredContact | null>(null);
-    let selectedPetId = $state("");
+    let selectedPetIds = $state<string[]>([]);
 
     // User contact availability - ONLY verified contacts
     let userHasVerifiedPhone = $derived(!!auth.user?.phone && auth.user?.phoneVerified === true);
@@ -117,7 +117,7 @@
                 return !!postType;
             case "pet":
                 // Pet is required for all post types
-                return !!selectedPetId;
+                return selectedPetIds.length > 0;
             case "content":
                 const descText = description.replace(/<[^>]*>/g, "").trim();
                 return title.trim().length > 0 && descText.length > 0;
@@ -422,8 +422,8 @@
 
     async function handlePetAdded(pet?: { id: string; name: string }) {
         await fetchUserPets();
-        if (pet?.id) {
-            selectedPetId = pet.id;
+        if (pet?.id && !selectedPetIds.includes(pet.id)) {
+            selectedPetIds = [...selectedPetIds, pet.id];
         }
         showAddPetModal = false;
         if (reopenAfterPet) {
@@ -456,7 +456,7 @@
 
         // Pet is required EXCEPT for "found" posts (you found someone else's pet)
         const petRequired = postType !== "missing" || reportType === "lost";
-        if (petRequired && !selectedPetId) {
+        if (petRequired && selectedPetIds.length === 0) {
             toast.warning($_("create_post.select_pet_required"));
             return;
         }
@@ -518,8 +518,8 @@
                 },
                 body: JSON.stringify({
                     query: `
-                        mutation CreatePost($title: String!, $description: String!, $postType: PostType!, $petId: ID, $location: String, $tags: [String!], $images: [String!], $video: String, $reportType: ReportType, $preferredContact: PreferredContactMethod) {
-                            createPost(title: $title, description: $description, postType: $postType, petId: $petId, location: $location, tags: $tags, images: $images, video: $video, reportType: $reportType, preferredContact: $preferredContact) {
+                        mutation CreatePost($title: String!, $description: String!, $postType: PostType!, $petIds: [ID!], $location: String, $tags: [String!], $images: [String!], $video: String, $reportType: ReportType, $preferredContact: PreferredContactMethod) {
+                            createPost(title: $title, description: $description, postType: $postType, petIds: $petIds, location: $location, tags: $tags, images: $images, video: $video, reportType: $reportType, preferredContact: $preferredContact) {
                                 id
                                 title
                                 description
@@ -548,7 +548,7 @@
                                     emailVerified
                                     phoneVerified
                                 }
-                                pet {
+                                pets {
                                     id
                                     name
                                     species { label }
@@ -567,7 +567,7 @@
                         title,
                         description,
                         postType,
-                        petId: selectedPetId || null,
+                        petIds: selectedPetIds.length > 0 ? selectedPetIds : null,
                         location: location.trim() || null,
                         tags,
                         images: imageUrls,
@@ -602,7 +602,7 @@
         postType = "post";
         reportType = null;
         preferredContact = null;
-        selectedPetId = "";
+        selectedPetIds = [];
         tags = [];
         tagInput = "";
         imageFiles = [];
@@ -740,9 +740,13 @@
                             <button
                                 type="button"
                                 onclick={() => {
-                                    selectedPetId = pet.id;
+                                    if (selectedPetIds.includes(pet.id)) {
+                                        selectedPetIds = selectedPetIds.filter(id => id !== pet.id);
+                                    } else {
+                                        selectedPetIds = [...selectedPetIds, pet.id];
+                                    }
                                 }}
-                                class="p-3 rounded-xl border-2 text-left transition-all {selectedPetId === pet.id
+                                class="p-3 rounded-xl border-2 text-left transition-all {selectedPetIds.includes(pet.id)
                                     ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
                                     : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}"
                             >

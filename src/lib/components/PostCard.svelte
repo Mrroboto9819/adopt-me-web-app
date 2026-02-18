@@ -406,52 +406,54 @@
         </div>
     {/if}
 
-    <!-- Pet Card (if adoption/missing post) -->
-    {#if post.pet}
-        <div class="mx-3 sm:mx-4 my-2 sm:my-3">
-            <div class="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-700/30 rounded-xl p-2.5 sm:p-3 border border-gray-200 dark:border-gray-600">
-                <div class="flex gap-2.5 sm:gap-3">
-                    <!-- Pet Image -->
-                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200 dark:bg-gray-600">
-                        {#if post.pet.coverImage}
-                            <img
-                                src={post.pet.coverImage}
-                                alt={post.pet.name}
-                                class="w-full h-full object-cover"
-                                draggable="false"
-                            />
-                        {:else}
-                            <div class="w-full h-full flex items-center justify-center text-xl sm:text-2xl">🐾</div>
-                        {/if}
-                    </div>
-                    <!-- Pet Info -->
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                            <h4 class="font-bold text-sm sm:text-base text-gray-900 dark:text-white truncate max-w-[120px] sm:max-w-none">{post.pet.name}</h4>
-                            {#if post.pet.status === "Adopted"}
-                                <span class="text-[9px] sm:text-[10px] font-bold bg-green-500 text-white px-1.5 py-0.5 rounded-full">
-                                    {$_("post_card.adopted")}
-                                </span>
+    <!-- Pet Cards (if adoption/missing post) -->
+    {#if post.pets?.length > 0}
+        <div class="mx-3 sm:mx-4 my-2 sm:my-3 space-y-2">
+            {#each post.pets as pet}
+                <div class="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-700/30 rounded-xl p-2.5 sm:p-3 border border-gray-200 dark:border-gray-600">
+                    <div class="flex gap-2.5 sm:gap-3">
+                        <!-- Pet Image -->
+                        <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden flex-shrink-0 bg-gray-200 dark:bg-gray-600">
+                            {#if pet.coverImage}
+                                <img
+                                    src={pet.coverImage}
+                                    alt={pet.name}
+                                    class="w-full h-full object-cover"
+                                    draggable="false"
+                                />
+                            {:else}
+                                <div class="w-full h-full flex items-center justify-center text-xl sm:text-2xl">🐾</div>
                             {/if}
                         </div>
-                        <p class="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 truncate">
-                            {post.pet.species?.label || post.pet.customSpecies || $_("post_card.unknown")} • {post.pet.breed?.name || post.pet.customBreed || $_("post_card.mixed")}
-                        </p>
-                        <div class="flex gap-1.5 sm:gap-2 mt-1 sm:mt-1.5 flex-wrap">
-                            {#if post.pet.age}
-                                <span class="text-[9px] sm:text-[10px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 sm:px-2 py-0.5 rounded-full font-medium">
-                                    {post.pet.age} {$_("post_card.yrs")}
-                                </span>
-                            {/if}
-                            {#if post.pet.gender}
-                                <span class="text-[9px] sm:text-[10px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 sm:px-2 py-0.5 rounded-full font-medium">
-                                    {post.pet.gender}
-                                </span>
-                            {/if}
+                        <!-- Pet Info -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                <h4 class="font-bold text-sm sm:text-base text-gray-900 dark:text-white truncate max-w-[120px] sm:max-w-none">{pet.name}</h4>
+                                {#if pet.status === "Adopted"}
+                                    <span class="text-[9px] sm:text-[10px] font-bold bg-green-500 text-white px-1.5 py-0.5 rounded-full">
+                                        {$_("post_card.adopted")}
+                                    </span>
+                                {/if}
+                            </div>
+                            <p class="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 truncate">
+                                {pet.species?.label || pet.customSpecies || $_("post_card.unknown")} • {pet.breed?.name || pet.customBreed || $_("post_card.mixed")}
+                            </p>
+                            <div class="flex gap-1.5 sm:gap-2 mt-1 sm:mt-1.5 flex-wrap">
+                                {#if pet.age}
+                                    <span class="text-[9px] sm:text-[10px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 sm:px-2 py-0.5 rounded-full font-medium">
+                                        {pet.age} {$_("post_card.yrs")}
+                                    </span>
+                                {/if}
+                                {#if pet.gender}
+                                    <span class="text-[9px] sm:text-[10px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 sm:px-2 py-0.5 rounded-full font-medium">
+                                        {pet.gender}
+                                    </span>
+                                {/if}
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            {/each}
         </div>
     {/if}
 
@@ -558,7 +560,7 @@
                 </button>
 
                 <!-- Adopt Button (for adoption posts) -->
-                {#if post.pet && post.postType === 'adopt' && post.pet.status !== "Adopted"}
+                {#if post.pets?.length > 0 && post.postType === 'adopt' && post.pets.some((p: any) => p.status !== "Adopted")}
                     <button
                         onclick={(e) => {
                             e.stopPropagation();

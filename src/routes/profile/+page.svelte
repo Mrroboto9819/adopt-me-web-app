@@ -392,13 +392,25 @@
           gender
           size
           color
+          weight
+          weightUnit
           description
           status
           coverImage
           images
+          energyLevel
+          temperament
+          goodWithKids
+          goodWithDogs
+          goodWithCats
+          houseTrained
+          trainingLevel
+          specialNeeds
+          adoptionFee
           health {
             vaccinated
             neutered
+            microchipped
           }
         }
         me {
@@ -531,6 +543,16 @@
             coverImage
             status
           }
+          pets {
+            id
+            name
+            species { label }
+            breed { name }
+            customSpecies
+            customBreed
+            coverImage
+            status
+          }
         }
       }
     `;
@@ -579,6 +601,16 @@
             coverImage
             status
           }
+          pets {
+            id
+            name
+            species { label }
+            breed { name }
+            customSpecies
+            customBreed
+            coverImage
+            status
+          }
         }
       }
     `;
@@ -618,6 +650,16 @@
             profilePicture
           }
           pet {
+            id
+            name
+            species { label }
+            breed { name }
+            customSpecies
+            customBreed
+            coverImage
+            status
+          }
+          pets {
             id
             name
             species { label }

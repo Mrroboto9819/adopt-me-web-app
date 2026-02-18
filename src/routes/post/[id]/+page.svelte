@@ -141,6 +141,21 @@
                                     coverImage
                                     images
                                 }
+                                pets {
+                                    id
+                                    name
+                                    species { id label name }
+                                    customSpecies
+                                    breed { name }
+                                    customBreed
+                                    age
+                                    gender
+                                    size
+                                    description
+                                    status
+                                    coverImage
+                                    images
+                                }
                             }
                         }
                     `,
@@ -744,56 +759,60 @@
                     </p>
                 </div>
 
-                <!-- Pet Info Card -->
-                {#if post.pet}
-                    <div class="mx-4 mb-4 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-2xl p-4 border border-indigo-100 dark:border-indigo-800/50">
-                        <div class="flex items-center gap-2 mb-3">
-                            <PawPrint class="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                            <h3 class="font-semibold text-gray-900 dark:text-white">{$_("post.pet_info")}</h3>
-                        </div>
-                        <div class="flex gap-4">
-                            {#if post.pet.coverImage}
-                                <button
-                                    onclick={() => openGallery(post.images?.length || 0)}
-                                    class="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0 shadow-md hover:shadow-lg transition-shadow"
-                                >
-                                    <img
-                                        src={post.pet.coverImage}
-                                        alt={post.pet.name}
-                                        draggable="false"
-                                        oncontextmenu={(e) => e.preventDefault()}
-                                        class="w-full h-full object-cover"
-                                    />
-                                </button>
-                            {/if}
-                            <div class="flex-1 min-w-0">
-                                <h4 class="text-lg font-bold text-gray-900 dark:text-white">{post.pet.name}</h4>
-                                <p class="text-sm text-gray-600 dark:text-gray-300">
-                                    {post.pet.species?.label || post.pet.customSpecies || "Unknown species"}
-                                    {post.pet.breed?.name || post.pet.customBreed ? ` • ${post.pet.breed?.name || post.pet.customBreed}` : ""}
-                                </p>
-                                <div class="flex flex-wrap gap-1.5 mt-2">
-                                    {#if post.pet.age}
-                                        <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
-                                            {$_("post.years_old", { values: { age: post.pet.age } })}
-                                        </span>
+                <!-- Pet Info Cards -->
+                {#if post.pets?.length > 0}
+                    <div class="mx-4 mb-4 space-y-3">
+                        {#each post.pets as pet}
+                            <div class="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-2xl p-4 border border-indigo-100 dark:border-indigo-800/50">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <PawPrint class="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                                    <h3 class="font-semibold text-gray-900 dark:text-white">{$_("post.pet_info")}</h3>
+                                </div>
+                                <div class="flex gap-4">
+                                    {#if pet.coverImage}
+                                        <button
+                                            onclick={() => openGallery(post.images?.length || 0)}
+                                            class="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0 shadow-md hover:shadow-lg transition-shadow"
+                                        >
+                                            <img
+                                                src={pet.coverImage}
+                                                alt={pet.name}
+                                                draggable="false"
+                                                oncontextmenu={(e) => e.preventDefault()}
+                                                class="w-full h-full object-cover"
+                                            />
+                                        </button>
                                     {/if}
-                                    {#if post.pet.gender && post.pet.gender !== "Unknown"}
-                                        <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
-                                            {post.pet.gender}
-                                        </span>
-                                    {/if}
-                                    {#if post.pet.size}
-                                        <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
-                                            {post.pet.size}
-                                        </span>
-                                    {/if}
-                                    <span class="px-2 py-0.5 rounded-full text-xs font-medium {post.pet.status === 'Adopted' ? 'bg-green-500 text-white' : 'bg-indigo-500 text-white'}">
-                                        {post.pet.status}
-                                    </span>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-lg font-bold text-gray-900 dark:text-white">{pet.name}</h4>
+                                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                                            {pet.species?.label || pet.customSpecies || "Unknown species"}
+                                            {pet.breed?.name || pet.customBreed ? ` • ${pet.breed?.name || pet.customBreed}` : ""}
+                                        </p>
+                                        <div class="flex flex-wrap gap-1.5 mt-2">
+                                            {#if pet.age}
+                                                <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
+                                                    {$_("post.years_old", { values: { age: pet.age } })}
+                                                </span>
+                                            {/if}
+                                            {#if pet.gender && pet.gender !== "Unknown"}
+                                                <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
+                                                    {pet.gender}
+                                                </span>
+                                            {/if}
+                                            {#if pet.size}
+                                                <span class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs text-gray-700 dark:text-gray-300 shadow-sm">
+                                                    {pet.size}
+                                                </span>
+                                            {/if}
+                                            <span class="px-2 py-0.5 rounded-full text-xs font-medium {pet.status === 'Adopted' ? 'bg-green-500 text-white' : 'bg-indigo-500 text-white'}">
+                                                {pet.status}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        {/each}
                     </div>
                 {/if}
 

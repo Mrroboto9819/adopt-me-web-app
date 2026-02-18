@@ -5,9 +5,9 @@ import { User } from '$lib/models/User';
 import { sendBetaInviteEmail } from '$lib/services/email';
 import { connectDB } from '$lib/db';
 
-// Admin email - only this user can send invites
-const ADMIN_EMAIL = "pablo.cabrera.castrejon@gmail.com";
+import { ADMIN_EMAIL } from '$env/static/private';
 
+// Admin email - only this user can send invites
 export async function POST({ request }: RequestEvent) {
     try {
         // Connect to database

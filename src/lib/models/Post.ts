@@ -15,6 +15,7 @@ export interface IPost extends IBase {
     description: string;
     author: mongoose.Types.ObjectId;
     pet?: mongoose.Types.ObjectId;
+    pets?: mongoose.Types.ObjectId[];
     postType: PostType;
     reportType?: ReportType; // Only for postType: 'missing' - indicates lost or found pet
     preferredContact?: PreferredContactMethod; // For adopt and missing posts - how to contact the author
@@ -32,6 +33,7 @@ const postSchema = new mongoose.Schema<IPost>({
     description: { type: String, required: true },
     author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     pet: { type: mongoose.Schema.Types.ObjectId, ref: 'Pet', required: false },
+    pets: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pet' }],
     postType: { type: String, enum: ['post', 'adopt', 'missing'], default: 'post' },
     reportType: { type: String, enum: ['lost', 'found'], required: false }, // For missing posts
     preferredContact: { type: String, enum: ['phone', 'email'], required: false }, // For adopt/missing posts

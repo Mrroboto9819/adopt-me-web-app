@@ -116,10 +116,11 @@
         }
     });
 
-    // Reset step when modal closes
+    // Reset step and form data when modal closes
     $effect(() => {
         if (!open) {
             currentStep = 0;
+            resetForm();
         }
     });
 
@@ -365,10 +366,10 @@
 
             toast.success($_("add_pet.pet_added"));
             resetForm();
-            onClose();
             if (onPetAdded) {
-                onPetAdded(result.data.addPet);
+                await onPetAdded(result.data.addPet);
             }
+            onClose();
         } catch (e: any) {
             toast.error($_("add_pet.failed_add") + ": " + e.message);
         } finally {

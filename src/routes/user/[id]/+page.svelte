@@ -148,6 +148,19 @@
                                     status
                                     coverImage
                                 }
+                                pets {
+                                    id
+                                    name
+                                    species { id label name }
+                                    breed { name }
+                                    customSpecies
+                                    customBreed
+                                    age
+                                    gender
+                                    description
+                                    status
+                                    coverImage
+                                }
                             }
                         }
                     `,

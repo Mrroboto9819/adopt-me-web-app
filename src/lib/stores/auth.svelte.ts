@@ -27,8 +27,9 @@ interface User {
     };
 }
 
+import { PUBLIC_ADMIN_EMAIL } from '$env/static/public';
+
 // Admin email for dev/admin features
-const ADMIN_EMAIL = "pablo.cabrera.castrejon@gmail.com";
 
 class AuthStore {
     // Internal state
@@ -65,7 +66,7 @@ class AuthStore {
     }
 
     get isAdmin() {
-        return this.#user?.email === ADMIN_EMAIL;
+        return this.#user?.email === PUBLIC_ADMIN_EMAIL;
     }
 
     // Actions

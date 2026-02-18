@@ -9,7 +9,7 @@
         MapPin,
         Tag,
         Image as ImageIcon,
-        Video,
+        Upload,
         PawPrint,
         Loader2,
         Mail,
@@ -35,6 +35,13 @@
             species?: { label: string };
             customSpecies?: string;
         };
+        pets?: {
+            id: string;
+            name: string;
+            coverImage?: string;
+            species?: { label: string };
+            customSpecies?: string;
+        }[];
     }
 
     interface Props {
@@ -55,8 +62,15 @@
     let images = $state<string[]>([]);
     let originalImages = $state<string[]>([]); // Track original images to delete removed ones
     let video = $state("");
-    let selectedPetId = $state("");
+    let selectedPetIds = $state<string[]>([]);
     let preferredContact = $state<string>("");
+
+    const MAX_IMAGES = 3;
+
+    // New images to upload
+    let newImageFiles = $state<File[]>([]);
+    let newImagePreviews = $derived(newImageFiles.map(f => URL.createObjectURL(f)));
+    let totalImageCount = $derived(images.length + newImageFiles.length);
 
     // UI state
     let saving = $state(false);
@@ -81,6 +95,47 @@
         }
     }
 
+    // Reset new files when modal closes
+    $effect(() => {
+        if (!open) {
+            newImageFiles = [];
+        }
+    });
+
+    async function uploadNewImages(): Promise<string[]> {
+        if (newImageFiles.length === 0) return [];
+        const formData = new FormData();
+        for (const file of newImageFiles) {
+            formData.append("file", file);
+        }
+        const res = await fetch("/api/upload", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${auth.token}` },
+            body: formData,
+        });
+        if (!res.ok) throw new Error("Image upload failed");
+        const data = await res.json();
+        return data.files as string[];
+    }
+
+    function handleImageInput(e: Event) {
+        const input = e.currentTarget as HTMLInputElement;
+        if (!input.files) return;
+        const remaining = MAX_IMAGES - images.length - newImageFiles.length;
+        if (remaining <= 0) {
+            toast.error(`You can only upload up to ${MAX_IMAGES} images`);
+            input.value = "";
+            return;
+        }
+        const added = Array.from(input.files).slice(0, remaining);
+        newImageFiles = [...newImageFiles, ...added];
+        input.value = "";
+    }
+
+    function removeNewImage(index: number) {
+        newImageFiles = newImageFiles.filter((_, i) => i !== index);
+    }
+
     // Initialize form when post changes
     $effect(() => {
         if (post && open) {
@@ -91,7 +146,14 @@
             images = post.images ? [...post.images] : [];
             originalImages = post.images ? [...post.images] : []; // Track original for cleanup
             video = post.video || "";
-            selectedPetId = post.pet?.id || "";
+            // Prefer pets array; fall back to single pet for backward-compat
+            if (post.pets && post.pets.length > 0) {
+                selectedPetIds = post.pets.map(p => p.id);
+            } else if (post.pet?.id) {
+                selectedPetIds = [post.pet.id];
+            } else {
+                selectedPetIds = [];
+            }
             preferredContact = post.preferredContact || "";
 
             // Fetch pets for selection
@@ -175,12 +237,16 @@
 
         saving = true;
         try {
+            // Upload any new images first
+            const uploadedUrls = await uploadNewImages();
+            const allImages = [...images, ...uploadedUrls];
+
             const mutation = `
                 mutation UpdatePost(
                     $id: ID!
                     $title: String
                     $description: String
-                    $petId: ID
+                    $petIds: [ID!]
                     $location: String
                     $tags: [String!]
                     $images: [String!]
@@ -191,7 +257,7 @@
                         id: $id
                         title: $title
                         description: $description
-                        petId: $petId
+                        petIds: $petIds
                         location: $location
                         tags: $tags
                         images: $images
@@ -206,9 +272,12 @@
                         images
                         video
                         preferredContact
-                        pet {
+                        pets {
                             id
                             name
+                            coverImage
+                            species { label }
+                            customSpecies
                         }
                     }
                 }
@@ -226,10 +295,10 @@
                         id: post.id,
                         title: title.trim(),
                         description: description.trim(),
-                        petId: selectedPetId || null,
+                        petIds: selectedPetIds.length > 0 ? selectedPetIds : null,
                         location: location.trim() || null,
                         tags: tags,
-                        images: images,
+                        images: allImages,
                         video: video || null,
                         preferredContact: preferredContact || null,
                     },
@@ -247,6 +316,7 @@
                 await deleteFile(imgUrl);
             }
 
+            newImageFiles = [];
             toast.success($_("edit_post.post_updated"));
             onClose();
             if (onPostUpdated) {
@@ -306,8 +376,14 @@
                     {#each pets as pet}
                         <button
                             type="button"
-                            onclick={() => selectedPetId = selectedPetId === pet.id ? "" : pet.id}
-                            class="p-3 rounded-xl border-2 text-left transition-all {selectedPetId === pet.id
+                            onclick={() => {
+                                if (selectedPetIds.includes(pet.id)) {
+                                    selectedPetIds = selectedPetIds.filter(id => id !== pet.id);
+                                } else {
+                                    selectedPetIds = [...selectedPetIds, pet.id];
+                                }
+                            }}
+                            class="p-3 rounded-xl border-2 text-left transition-all {selectedPetIds.includes(pet.id)
                                 ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
                                 : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}"
                         >
@@ -415,24 +491,55 @@
                 <ImageIcon class="w-4 h-4 inline mr-1" />
                 {$_("create_post.images")}
             </label>
-            {#if images.length > 0}
-                <div class="grid grid-cols-4 gap-2 mb-2">
-                    {#each images as image, i}
-                        <div class="relative aspect-square">
-                            <img src={image} alt="Post image {i + 1}" class="w-full h-full object-cover rounded-lg" />
-                            <button
-                                type="button"
-                                onclick={() => removeImage(i)}
-                                class="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
-                            >
-                                <X class="w-3 h-3" />
-                            </button>
-                        </div>
-                    {/each}
-                </div>
-            {:else}
-                <p class="text-sm text-gray-500 dark:text-gray-400">{$_("edit_post.no_images")}</p>
-            {/if}
+            <div class="grid grid-cols-4 gap-2 mb-2">
+                <!-- Existing images -->
+                {#each images as image, i}
+                    <div class="relative aspect-square group">
+                        <img src={image} alt="Post image {i + 1}" class="w-full h-full object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
+                        <button
+                            type="button"
+                            onclick={() => removeImage(i)}
+                            class="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity shadow"
+                        >
+                            <X class="w-3 h-3" />
+                        </button>
+                    </div>
+                {/each}
+                <!-- New images (not yet uploaded) -->
+                {#each newImagePreviews as preview, i}
+                    <div class="relative aspect-square group">
+                        <img src={preview} alt="New image {i + 1}" class="w-full h-full object-cover rounded-lg border-2 border-indigo-400 dark:border-indigo-500" />
+                        <button
+                            type="button"
+                            onclick={() => removeNewImage(i)}
+                            class="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity shadow"
+                        >
+                            <X class="w-3 h-3" />
+                        </button>
+                    </div>
+                {/each}
+                <!-- Add more button (hidden when at limit) -->
+                {#if totalImageCount < MAX_IMAGES}
+                    <label
+                        for="editPostImages"
+                        class="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        <Upload class="w-5 h-5 text-gray-400 dark:text-gray-500" />
+                        <span class="text-xs text-gray-400 dark:text-gray-500 mt-1">{$_("common.add")}</span>
+                    </label>
+                {/if}
+            </div>
+            <input
+                id="editPostImages"
+                type="file"
+                accept="image/*"
+                multiple
+                class="hidden"
+                onchange={handleImageInput}
+            />
+            <p class="text-xs text-gray-400 dark:text-gray-500">
+                {totalImageCount} / {MAX_IMAGES} {$_("create_post.images_text")}
+            </p>
         </div>
     </div>
 

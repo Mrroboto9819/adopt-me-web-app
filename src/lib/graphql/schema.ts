@@ -25,13 +25,24 @@ import {
   sanitizeAddress
 } from '$lib/utils/sanitize';
 import { getCountryFlag } from '$lib/utils/countryFlag';
+import fs from 'fs';
+import path from 'path';
+import { getUploadsBaseDir } from '$lib/upload-utils';
+
+// Returns true only if the uploaded file physically exists on disk
+const fileExistsForUrl = (url: string): boolean => {
+  if (!url || !url.startsWith('/uploads/')) return false;
+  const relativePath = url.slice('/uploads/'.length);
+  const filePath = path.join(getUploadsBaseDir(), relativePath);
+  return fs.existsSync(filePath);
+};
 import { generateVerificationCode, sendEmailVerificationCode, sendWelcomeEmail, sendPasswordResetEmail } from '$lib/services/email';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { sendPhoneVerificationCode, verifyPhoneCode, formatPhoneNumber } from '$lib/services/sms';
 
 // Admin email for admin-only operations (same as auth store)
-const ADMIN_EMAIL = "pablo.cabrera.castrejon@gmail.com";
+import { ADMIN_EMAIL } from '$env/static/private';
 
 // Helper function to check if user is admin
 const isAdmin = (user: { email?: string } | null | undefined): boolean => {
@@ -246,6 +257,7 @@ const typeDefs = `
     updatedAt: String!
     author: User!
     pet: Pet
+    pets: [Pet!]!
     upvotes: Int!
     downvotes: Int!
     voteScore: Int!
@@ -433,8 +445,8 @@ const typeDefs = `
     updatePet(id: ID!, name: String, speciesId: ID, customSpecies: String, breedId: ID, customBreed: String, age: Int, gender: String, size: String, color: String, weight: Float, weightUnit: String, description: String, status: String, energyLevel: String, temperament: [String!], goodWithKids: Boolean, goodWithDogs: Boolean, goodWithCats: Boolean, houseTrained: Boolean, trainingLevel: String, specialNeeds: String, adoptionFee: Float, coverImage: String, images: [String!], health: HealthInput): Pet!
     deletePet(id: ID!): Boolean!
     createUser(email: String!, firstName: String!, lastName: String!, secondLastName: String, password: String!, address: AddressInput, timezone: String, profilePicture: String, preferredSpecies: [ID!], language: String): User!
-    createPost(title: String!, description: String!, postType: PostType!, petId: ID, location: String, tags: [String!], images: [String!], video: String, adoptionAddress: AddressInput, reportType: ReportType, preferredContact: PreferredContactMethod): Post!
-    updatePost(id: ID!, title: String, description: String, petId: ID, location: String, tags: [String!], images: [String!], video: String, preferredContact: PreferredContactMethod): Post!
+    createPost(title: String!, description: String!, postType: PostType!, petId: ID, petIds: [ID!], location: String, tags: [String!], images: [String!], video: String, adoptionAddress: AddressInput, reportType: ReportType, preferredContact: PreferredContactMethod): Post!
+    updatePost(id: ID!, title: String, description: String, petId: ID, petIds: [ID!], location: String, tags: [String!], images: [String!], video: String, preferredContact: PreferredContactMethod): Post!
     deletePost(id: ID!): Boolean!
 
     updateUser(firstName: String, lastName: String, secondLastName: String, address: AddressInput, timezone: String, profilePicture: String, coverImage: String, coverImageOffset: CoverImageOffsetInput, preferredSpecies: [ID!], language: String, phone: String, phoneCountryCode: String, theme: String, notifications: NotificationSettingsInput): User!
@@ -646,6 +658,7 @@ interface CreatePostArgs {
   description: string;
   postType: 'post' | 'adopt' | 'missing';
   petId?: string;
+  petIds?: string[];
   location?: string;
   tags?: string[];
   images?: string[];
@@ -732,6 +745,13 @@ const resolvers = {
             { path: 'breed' }
           ]
         })
+        .populate({
+          path: 'pets',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
+        })
         .limit(limit)
         .skip(offset)
         .sort({ createdAt: -1 });
@@ -745,6 +765,13 @@ const resolvers = {
         .populate('author')
         .populate({
           path: 'pet',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
+        })
+        .populate({
+          path: 'pets',
           populate: [
             { path: 'species' },
             { path: 'breed' }
@@ -775,6 +802,7 @@ const resolvers = {
       return await Post.find({ isActive: true })
         .populate('author')
         .populate('pet')
+        .populate('pets')
         .limit(limit)
         .skip(offset)
         .sort({ createdAt: -1 });
@@ -784,6 +812,13 @@ const resolvers = {
         .populate('author')
         .populate({
           path: 'pet',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
+        })
+        .populate({
+          path: 'pets',
           populate: [
             { path: 'species' },
             { path: 'breed' }
@@ -997,6 +1032,13 @@ const resolvers = {
               { path: 'species' },
               { path: 'breed' }
             ]
+          },
+          {
+            path: 'pets',
+            populate: [
+              { path: 'species' },
+              { path: 'breed' }
+            ]
           }
         ]);
 
@@ -1048,6 +1090,13 @@ const resolvers = {
         .populate('author')
         .populate({
           path: 'pet',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
+        })
+        .populate({
+          path: 'pets',
           populate: [
             { path: 'species' },
             { path: 'breed' }
@@ -1129,6 +1178,13 @@ const resolvers = {
             { path: 'breed' }
           ]
         })
+        .populate({
+          path: 'pets',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
+        })
         .limit(limit)
         .skip(offset)
         .sort({ createdAt: -1 });
@@ -1157,6 +1213,13 @@ const resolvers = {
         .populate('author')
         .populate({
           path: 'pet',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
+        })
+        .populate({
+          path: 'pets',
           populate: [
             { path: 'species' },
             { path: 'breed' }
@@ -1246,6 +1309,10 @@ const resolvers = {
             {
               path: 'pet',
               populate: [{ path: 'species' }, { path: 'breed' }]
+            },
+            {
+              path: 'pets',
+              populate: [{ path: 'species' }, { path: 'breed' }]
             }
           ]
         })
@@ -1272,6 +1339,10 @@ const resolvers = {
             { path: 'author' },
             {
               path: 'pet',
+              populate: [{ path: 'species' }, { path: 'breed' }]
+            },
+            {
+              path: 'pets',
               populate: [{ path: 'species' }, { path: 'breed' }]
             }
           ]
@@ -1577,8 +1648,16 @@ const resolvers = {
       // Health & Adoption
       if (args.specialNeeds !== undefined) updates.specialNeeds = sanitizeDescription(args.specialNeeds);
       if (args.adoptionFee !== undefined) updates.adoptionFee = args.adoptionFee;
-      if (args.coverImage !== undefined) updates.coverImage = sanitizeUrl(args.coverImage) || undefined;
-      if (args.images !== undefined) updates.images = sanitizeUrlArray(args.images);
+      if (args.coverImage !== undefined) {
+        const sanitized = sanitizeUrl(args.coverImage);
+        if (sanitized && fileExistsForUrl(sanitized)) {
+          updates.coverImage = sanitized;
+        }
+        // If file doesn't exist, skip updating coverImage (keep existing DB value)
+      }
+      if (args.images !== undefined) {
+        updates.images = sanitizeUrlArray(args.images).filter(fileExistsForUrl);
+      }
       if (args.health !== undefined) {
         updates.health = {
           vaccinated: args.health.vaccinated ?? false,
@@ -1724,7 +1803,7 @@ const resolvers = {
         throw new GraphQLError('Post description is required');
       }
 
-      // Validate media: max 4 images, and images/video are mutually exclusive
+      // Validate media: images and video are mutually exclusive
       const hasImages = images.length > 0;
       const hasVideo = video.length > 0;
 
@@ -1732,14 +1811,10 @@ const resolvers = {
         throw new GraphQLError('A post can have either images or a video, not both');
       }
 
-      if (hasImages && images.length > 4) {
-        throw new GraphQLError('Maximum 4 images allowed per post');
-      }
-
       // === ADOPTION POST VALIDATION ===
       if (args.postType === 'adopt') {
         // Pet is required for adoption posts
-        if (!args.petId) {
+        if (!args.petId && (!args.petIds || args.petIds.length === 0)) {
           throw new GraphQLError('Pet selection is required for adoption posts');
         }
         // Media is required (image or video)
@@ -1782,7 +1857,7 @@ const resolvers = {
           throw new GraphQLError('Preferred contact method is required for missing pet posts');
         }
         // Lost pets require pet selection
-        if (args.reportType === 'lost' && !args.petId) {
+        if (args.reportType === 'lost' && !args.petId && (!args.petIds || args.petIds.length === 0)) {
           throw new GraphQLError('Pet selection is required when reporting a lost pet');
         }
         // Validate user has the selected contact method
@@ -1801,6 +1876,18 @@ const resolvers = {
           throw new GraphQLError('Pet not found');
         }
       }
+      // Verify all petIds exist if provided
+      if (args.petIds && args.petIds.length > 0) {
+        for (const pid of args.petIds) {
+          const pet = await Pet.findById(pid);
+          if (!pet) throw new GraphQLError(`Pet not found: ${pid}`);
+        }
+      }
+
+      // Resolve final pets array: prefer petIds, fall back to petId
+      const resolvedPetIds = args.petIds && args.petIds.length > 0
+        ? args.petIds
+        : args.petId ? [args.petId] : [];
 
       const newPost = new Post({
         title,
@@ -1813,6 +1900,7 @@ const resolvers = {
         video: video || null,
         author: context.user._id,
         ...(args.petId ? { pet: args.petId } : {}),
+        ...(resolvedPetIds.length > 0 ? { pets: resolvedPetIds } : {}),
         location: location || undefined,
         ...(adoptionAddress ? { adoptionAddress: { ...adoptionAddress, country: adoptionAddress.country || 'USA' } } : {})
       });
@@ -1827,11 +1915,18 @@ const resolvers = {
             { path: 'species' },
             { path: 'breed' }
           ]
+        })
+        .populate({
+          path: 'pets',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
         });
 
       return populatedPost;
     },
-    updatePost: async (_: unknown, args: { id: string; title?: string; description?: string; petId?: string; location?: string; tags?: string[]; images?: string[]; video?: string; preferredContact?: string }, context: Context) => {
+    updatePost: async (_: unknown, args: { id: string; title?: string; description?: string; petId?: string; petIds?: string[]; location?: string; tags?: string[]; images?: string[]; video?: string; preferredContact?: string }, context: Context) => {
       if (!context.user) throw new GraphQLError('Unauthorized');
 
       const post = await Post.findById(args.id);
@@ -1869,6 +1964,18 @@ const resolvers = {
         }
       }
 
+      if (args.petIds !== undefined) {
+        if (args.petIds.length > 0) {
+          for (const pid of args.petIds) {
+            const pet = await Pet.findById(pid);
+            if (!pet) throw new GraphQLError(`Pet not found: ${pid}`);
+          }
+          post.pets = args.petIds as any;
+        } else {
+          post.pets = [];
+        }
+      }
+
       if (args.location !== undefined) {
         post.location = sanitizeLocation(args.location);
       }
@@ -1878,10 +1985,7 @@ const resolvers = {
       }
 
       if (args.images !== undefined) {
-        const images = sanitizeUrlArray(args.images);
-        if (images.length > 4) {
-          throw new GraphQLError('Maximum 4 images allowed per post');
-        }
+        const images = sanitizeUrlArray(args.images).filter(fileExistsForUrl);
         post.images = images;
       }
 
@@ -1900,6 +2004,13 @@ const resolvers = {
         .populate('author')
         .populate({
           path: 'pet',
+          populate: [
+            { path: 'species' },
+            { path: 'breed' }
+          ]
+        })
+        .populate({
+          path: 'pets',
           populate: [
             { path: 'species' },
             { path: 'breed' }
@@ -2754,6 +2865,23 @@ const resolvers = {
         return parent.pet;
       }
       return await Pet.findById(parent.pet);
+    },
+    pets: async (parent: IPost) => {
+      // If pets array is already populated, return it
+      if (parent.pets && parent.pets.length > 0) {
+        if (typeof (parent.pets[0] as any) === 'object' && '_id' in (parent.pets[0] as any)) {
+          return parent.pets;
+        }
+        return await Pet.find({ _id: { $in: parent.pets } }).populate('species').populate('breed');
+      }
+      // Backward-compat: fall back to single pet field
+      if (parent.pet) {
+        const pet = typeof parent.pet === 'object' && '_id' in parent.pet
+          ? parent.pet
+          : await Pet.findById(parent.pet).populate('species').populate('breed');
+        return pet ? [pet] : [];
+      }
+      return [];
     },
     // Ensure new fields have default values for existing posts
     postType: (parent: any) => parent.postType || 'post',

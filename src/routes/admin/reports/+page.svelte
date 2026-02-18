@@ -178,6 +178,12 @@
                                         species { label }
                                         breed { name }
                                     }
+                                    pets {
+                                        id
+                                        name
+                                        species { label }
+                                        breed { name }
+                                    }
                                 }
                                 postOwner {
                                     id
