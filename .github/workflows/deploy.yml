@@ -23,10 +23,9 @@ jobs:
 
             echo "Pulling latest code..."
             git fetch origin develop
+            git checkout develop
             git reset --hard origin/develop
             git clean -fd
-
-            git pull origin develop
 
             echo "Building containers..."
             docker compose -f docker-compose.yml build
